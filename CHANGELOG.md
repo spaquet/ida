@@ -4,6 +4,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.5.2]
 
+- Changed `ida impact`'s default depth from 2 to 1 (CLI and MCP tool
+  `ida_impact`). At depth 2, traversal walked straight through any
+  high-fan-out hub node (e.g. a multi-tenant `Organization` model that
+  dozens of unrelated models `belongs_to`), surfacing most of the app as
+  "impacted" by an unrelated change. Depth 1 now returns only relationships
+  that directly touch the queried node; `depth` can still be raised
+  explicitly when a deeper walk is genuinely wanted.
 - Changed `confidence` on every node and edge from a string label
   (`"exact"`/`"convention"`/`"lsp"`) to an integer 0-100, so consuming agents
   get a directly usable value instead of an opaque enum. Every fact Ida

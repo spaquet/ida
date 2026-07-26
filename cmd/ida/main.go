@@ -326,7 +326,7 @@ func run(args []string) error {
 			}
 			return printValue(result, jsonOutput)
 		}
-		result, err := query.Impact(db, strings.Join(args[1:], " "), 2, 50)
+		result, err := query.Impact(db, strings.Join(args[1:], " "), 1, 50)
 		if err != nil {
 			return err
 		}

@@ -183,12 +183,19 @@ ida path "GET /articles" app/views/articles/index.html.erb
 
 ### `ida impact <name-or-id>`
 
-Traverse likely incoming and outgoing effects to depth two, returning at most
-50 relationships.
+List every direct incoming and outgoing relationship one hop from the named
+node — everything that could plausibly break if it changes, and nothing
+further removed. Bounded to at most 50 relationships.
 
 ```sh
 ida impact index
 ```
+
+Deliberately shallow: a two-hop traversal through a shared hub node (e.g. a
+Rails model that dozens of unrelated models `belongs_to`, like a
+multi-tenant `Organization`) would surface most of the app as "impacted,"
+which is not useful. Use `ida path <from> <to>` to check a specific
+multi-hop connection instead of widening `impact`.
 
 ### `ida unused <partial|view_component>`
 

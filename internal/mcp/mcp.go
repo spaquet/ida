@@ -274,7 +274,7 @@ func callTool(root string, db *store.DB, name string, arguments json.RawMessage)
 			return nil, err
 		}
 		if input.Depth == 0 {
-			input.Depth = 2
+			input.Depth = 1
 		}
 		if input.Limit == 0 {
 			input.Limit = 50

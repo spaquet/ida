@@ -142,19 +142,25 @@ Find a short directed relationship path.
 
 ### `ida_impact`
 
-Return bounded likely upstream and downstream relationships.
+Return direct (one-hop) incoming and outgoing relationships — everything
+that could plausibly break if `name` changes.
 
 | Parameter | Required | Default | Bounds |
 | --- | --- | --- | --- |
 | `name` | yes | — | 1–1,000 characters |
-| `depth` | no | `2` | 1–4 |
+| `depth` | no | `1` | 1–4 |
 | `limit` | no | `50` | 1–100 |
 
 ```json
-{"name":"index","depth":2,"limit":50}
+{"name":"index","depth":1,"limit":50}
 ```
 
 Impact is a static graph traversal, not a claim of complete runtime behavior.
+The default depth is deliberately `1`: a shared hub node (e.g. a Rails model
+that many unrelated models `belongs_to`, like a multi-tenant `Organization`)
+makes depth `2`+ surface most of the app as "impacted." Raise `depth` only
+when you specifically want to walk past direct relationships and accept
+that risk.
 
 ### `ida_refresh`
 
