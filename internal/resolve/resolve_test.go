@@ -43,7 +43,7 @@ func edgeKinds(t *testing.T, db *store.DB) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var kinds []string
 	for rows.Next() {
 		var k string
@@ -175,7 +175,7 @@ func TestResolveJSXSameFileAndCrossFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	got := map[string]string{}
 	for rows.Next() {
 		var s, tg string
@@ -241,7 +241,7 @@ func TestResolveTailwindFansOutToMultipleFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var targets []string
 	for rows.Next() {
 		var tg string
