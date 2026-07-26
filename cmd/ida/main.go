@@ -148,6 +148,7 @@ func run(args []string) error {
 				}
 			}
 		}()
+		fmt.Fprintf(os.Stderr, "ida watch: watching %s (Ctrl+C to stop)\n", root)
 		return watch.Run(ctx, root, updates)
 	case "status":
 		root, err := project.Discover(arg(args, 1, "."))
