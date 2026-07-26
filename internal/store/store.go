@@ -65,7 +65,7 @@ func Open(root string) (*DB, error) {
 	}
 	wrapped := &DB{DB: db}
 	if err := wrapped.migrate(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	return wrapped, nil

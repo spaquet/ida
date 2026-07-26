@@ -91,7 +91,7 @@ LIMIT ?`, like, like, like, like, term, term, store.EscapeLike(strings.ToLower(t
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var results []store.SearchResult
 	for rows.Next() {
 		var result store.SearchResult
@@ -212,7 +212,7 @@ LIMIT 2`, nameOrID, nameOrID, nameOrID, nameOrID, nameOrID)
 	if err != nil {
 		return NodeResult{}, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var matches []store.SearchResult
 	for rows.Next() {
 		var result store.SearchResult
@@ -314,15 +314,18 @@ func Impact(db *store.DB, nameOrID string, depth, limit int) ([]Relationship, er
 	return result, nil
 }
 
+func isTokenSeparator(r rune) bool {
+	isWordRune := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_!?=:#/", r)
+	return !isWordRune
+}
+
 func contextSearch(db *store.DB, task string) ([]store.SearchResult, error) {
 	results, err := Search(db, task, 100)
 	if err != nil || len(results) > 0 {
 		return results, err
 	}
 	seen := make(map[string]bool)
-	for _, token := range strings.FieldsFunc(task, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_!?=:#/", r))
-	}) {
+	for _, token := range strings.FieldsFunc(task, isTokenSeparator) {
 		if len(token) < 3 {
 			continue
 		}
@@ -346,10 +349,11 @@ func relationships(db *store.DB, id, direction string, limit int) ([]Relationshi
 	}
 	where := "(e.source_id = ? OR e.target_id = ?)"
 	args := []any{id, id, limit}
-	if direction == "incoming" {
+	switch direction {
+	case "incoming":
 		where = "e.target_id = ?"
 		args = []any{id, limit}
-	} else if direction == "outgoing" {
+	case "outgoing":
 		where = "e.source_id = ?"
 		args = []any{id, limit}
 	}
@@ -360,7 +364,7 @@ WHERE `+where+` ORDER BY e.kind, s.name, t.name LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []Relationship
 	for rows.Next() {
 		var item Relationship

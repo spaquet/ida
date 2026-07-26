@@ -26,7 +26,7 @@ FROM nodes n WHERE n.kind = 'route'`)
 	for rows.Next() {
 		var item route
 		if err := rows.Scan(&item.id, &item.target, &item.line, &item.fileID); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return err
 		}
 		routes = append(routes, item)
@@ -71,7 +71,7 @@ WHERE f.path = ? AND n.kind = ? AND n.name = ? LIMIT 2`, path, kind, name)
 	if err != nil {
 		return "", 0, 0, 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var id string
 	var fileID int64
 	var line int
@@ -92,7 +92,7 @@ WHERE n.kind = 'file' AND f.path LIKE ? ESCAPE '\' LIMIT 2`, escapeLike(prefix)+
 	if err != nil {
 		return "", 0, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var id string
 	count := 0
 	for rows.Next() {

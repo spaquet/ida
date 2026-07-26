@@ -28,3 +28,8 @@ out-of-scope list).
   if static coverage gaps (e.g. dynamic `import()`) are measured and large
   enough to matter — same flag-unknown/disambiguate pattern as the LLM
   pass above, not a new capture channel.
+- **Self-hosted Go Report Card.** Run own instance of
+  github.com/gojp/goreportcard (or a fork) against this repo for a
+  gofmt/vet/lint/ineffassign/misspell quality score. Separate infra from the
+  CI test pipeline (a hosted service, not a CI job) — revisit after
+  first-release scope lands.

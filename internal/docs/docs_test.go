@@ -23,7 +23,7 @@ func TestRemoteDocumentSearchAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	tx, err := db.Begin()
 	if err != nil {
 		t.Fatal(err)

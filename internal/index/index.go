@@ -41,7 +41,7 @@ func Sync(root string) (result Result, err error) {
 	if err != nil {
 		return result, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	defer func() {
 		if err != nil {
 			db.MarkFailed(err.Error())
@@ -56,7 +56,7 @@ func Sync(root string) (result Result, err error) {
 	if err != nil {
 		return result, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.Exec("DELETE FROM nodes"); err != nil {
 		return result, err
 	}
@@ -101,7 +101,7 @@ func Refresh(root string, changed []string) (result Result, err error) {
 	if err != nil {
 		return result, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	defer func() {
 		if err != nil {
 			db.MarkFailed(err.Error())
@@ -116,7 +116,7 @@ func Refresh(root string, changed []string) (result Result, err error) {
 	if err != nil {
 		return result, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = tx.Exec("DELETE FROM edges"); err != nil {
 		return result, err
 	}
@@ -178,7 +178,7 @@ func Reconcile(root string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	type indexedFile struct {
 		hash  string
 		size  int64
@@ -193,7 +193,7 @@ func Reconcile(root string) (Result, error) {
 		var path string
 		var file indexedFile
 		if err := rows.Scan(&path, &file.hash, &file.size, &file.mtime); err != nil {
-			rows.Close()
+			_ = rows.Close()
 			return Result{}, err
 		}
 		indexed[path] = file

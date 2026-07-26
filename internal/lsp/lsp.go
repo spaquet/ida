@@ -46,17 +46,17 @@ func InstallMissing(ctx context.Context, root string, input io.Reader, output io
 	reader := bufio.NewReader(input)
 	for _, server := range servers {
 		if server.Status == "available" {
-			fmt.Fprintf(output, "%s: already available (%s)\n", server.Name, strings.Join(server.Command, " "))
+			_, _ = fmt.Fprintf(output, "%s: already available (%s)\n", server.Name, strings.Join(server.Command, " "))
 			continue
 		}
 		if len(server.InstallCommand) == 0 {
-			fmt.Fprintf(output, "%s: configured command is unavailable\n", server.Name)
+			_, _ = fmt.Fprintf(output, "%s: configured command is unavailable\n", server.Name)
 			continue
 		}
-		fmt.Fprintf(output, "%s: not found\nRun %q? [y/N] ", server.Name, strings.Join(server.InstallCommand, " "))
+		_, _ = fmt.Fprintf(output, "%s: not found\nRun %q? [y/N] ", server.Name, strings.Join(server.InstallCommand, " "))
 		answer, _ := reader.ReadString('\n')
 		if answer = strings.ToLower(strings.TrimSpace(answer)); answer != "y" && answer != "yes" {
-			fmt.Fprintln(output, "skipped")
+			_, _ = fmt.Fprintln(output, "skipped")
 			continue
 		}
 		command := exec.CommandContext(ctx, server.InstallCommand[0], server.InstallCommand[1:]...)

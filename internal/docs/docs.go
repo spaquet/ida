@@ -57,7 +57,7 @@ func AddRemote(ctx context.Context, root, source string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return Result{}, fmt.Errorf("documentation request returned %s", response.Status)
 	}
@@ -78,12 +78,12 @@ func AddRemote(ctx context.Context, root, source string) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	tx, err := db.Begin()
 	if err != nil {
 		return Result{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	count, err := replace(tx, parsed.String(), "remote", content, contentType, store.IndexedAt())
 	if err == nil {
 		err = tx.Commit()

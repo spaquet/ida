@@ -144,7 +144,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		status, err := db.Status()
 		if err != nil {
 			return err
@@ -186,7 +186,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		result, err := docs.LocalResult(db, source)
 		if err != nil {
 			return err
@@ -218,7 +218,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		if args[0] == "search" {
 			q := strings.Join(args[1:], " ")
 			results, err := query.Search(db, q, 20)

@@ -26,7 +26,7 @@ func TestSyncSearchAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	results, err := query.Search(db, "Publishable", 10)
 	if err != nil || len(results) != 1 {
 		t.Fatalf("Search() = %#v, %v; want one result", results, err)

@@ -33,7 +33,7 @@ func Run(ctx context.Context, root string, updates chan<- Update) error {
 	if err != nil {
 		return err
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 	if err := addInitialDirs(watcher, root, scope); err != nil {
 		return err
 	}
@@ -41,7 +41,7 @@ func Run(ctx context.Context, root string, updates chan<- Update) error {
 	if err != nil {
 		return err
 	}
-	defer health.Close()
+	defer func() { _ = health.Close() }()
 	// ponytail: one row is enough until concurrent watcher diagnostics matter.
 	health.SetWatcherStatus("watching", nil, "")
 	defer health.SetWatcherStatus("stopped", nil, "")

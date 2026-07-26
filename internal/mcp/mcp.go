@@ -55,13 +55,13 @@ func Serve(parent context.Context, root string, input io.Reader, output, diagnos
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	updates := make(chan watch.Update, 8)
 	go func() {
 		if err := watch.Run(ctx, root, updates); err != nil {
-			fmt.Fprintln(diagnostics, "ida mcp watcher:", err)
+			_, _ = fmt.Fprintln(diagnostics, "ida mcp watcher:", err)
 		}
 	}()
 	go func() {
@@ -71,7 +71,7 @@ func Serve(parent context.Context, root string, input io.Reader, output, diagnos
 				return
 			case update := <-updates:
 				if update.Err != nil {
-					fmt.Fprintln(diagnostics, "ida mcp watcher:", update.Err)
+					_, _ = fmt.Fprintln(diagnostics, "ida mcp watcher:", update.Err)
 				}
 			}
 		}

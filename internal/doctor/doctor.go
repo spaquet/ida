@@ -29,7 +29,7 @@ func Run(root string) Report {
 		report.Healthy = false
 		report.Checks = append(report.Checks, Check{Name: "database", Status: "error", Detail: err.Error()})
 	} else {
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 		status, statusErr := db.Status()
 		if statusErr != nil {
 			report.Healthy = false
