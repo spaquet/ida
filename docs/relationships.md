@@ -145,7 +145,7 @@ collection form — becomes a `view_component_use` node wherever it appears
 `renders_component` edge is added only when exactly one `view_component`
 matches.
 
-## Finding unused partials and components
+## Finding unused partials, components, and methods
 
 `ida unused partial` and `ida unused view_component` (MCP tool
 `ida_unused`, argument `kind`) list every `partial`/`view_component` node
@@ -154,6 +154,25 @@ object-based `render @model` and dynamically computed render targets are
 never resolved, a partial or component rendered only that way will appear
 here even though it is actually used — treat the result as a lead to check,
 not a guaranteed-dead-code list.
+
+`ida unused method` is the same idea for methods, but with a wider and more
+heuristic net. A resolved `calls`/`routes_to`/`stimulus_action` edge counts
+as a use, same as elsewhere in the graph — but most Ruby method calls are on
+a local or instance variable (`task.archive!`) whose class Ida cannot
+determine, so a call site alone rarely resolves to an edge at all. To avoid
+flooding the result with every legitimately-used method, "used" also
+includes any same-named `.method` or `:method` reference anywhere in the
+codebase (`task.archive!`, `before_action :dev_only`), matched by bare name
+only — not by resolving which class actually owns it, so two unrelated
+methods sharing a name will each suppress the other's "unused" result. Ida
+also excludes, outright, three method shapes that are conventionally
+invoked by the framework rather than by name in application code:
+`initialize` (called via `.new`); any method on a Pundit-style
+`*Policy`/`*Policy::Scope` class (invoked via reflection); and any
+`?`/`!`-suffixed predicate or bang method. A method called only from an ERB
+template as a bare `<%= helper_method %>`, or only via `send`/metaprogramming,
+has no textual trace at all and will still appear here — `ida unused method`
+is a lead list, not a dead-code list, more so than `partial`/`view_component`.
 
 ## Associations
 

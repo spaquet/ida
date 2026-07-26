@@ -313,13 +313,12 @@ func hardExcluded(path string) string {
 	parts := strings.Split(path, "/")
 	for _, part := range parts {
 		switch part {
-		case ".git", ".ida", "log", "tmp", "storage", "coverage", "node_modules", "dist", "build":
+		case ".git", ".ida", "log", "tmp", "storage", "coverage", "node_modules", "dist", "build",
+			"public", "bin", "vendor":
 			return "hard safety exclusion"
 		}
 	}
-	if strings.HasPrefix(path, "vendor/bundle/") || strings.HasPrefix(path, "public/assets/") ||
-		strings.HasPrefix(path, "public/packs/") || strings.HasPrefix(path, "public/vite/") ||
-		strings.HasPrefix(path, "app/assets/builds/") {
+	if strings.HasPrefix(path, "app/assets/builds/") {
 		return "generated or dependency content"
 	}
 	base := strings.ToLower(filepath.Base(path))
@@ -344,7 +343,7 @@ func defaultIncluded(path string) bool {
 	if strings.HasPrefix(path, "config/") {
 		return ext == ".rb" || ext == ".yml" || ext == ".yaml"
 	}
-	if strings.HasPrefix(path, "lib/") || strings.HasPrefix(path, "db/migrate/") {
+	if strings.HasPrefix(path, "lib/") {
 		return true
 	}
 	return slices.Contains([]string{".md", ".markdown", ".adoc", ".asciidoc", ".html", ".txt"}, ext)

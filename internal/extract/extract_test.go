@@ -12,10 +12,32 @@ func TestRubyDeclarations(t *testing.T) {
 	for _, node := range nodes {
 		got[node.QualifiedName] = true
 	}
-	for _, want := range []string{"Admin", "User", "User#active?"} {
+	for _, want := range []string{"Admin", "Admin::User", "Admin::User#active?"} {
 		if !got[want] {
 			t.Errorf("missing %q in %#v", want, nodes)
 		}
+	}
+}
+
+// TestRubyNestedClassQualifiesByEnclosingClass covers the Pundit-policy
+// pattern of a bare `class Scope` nested inside another class with no
+// repeated outer name in source (as opposed to the explicit `class
+// Foo::Bar` form). Without folding in the enclosing class, two unrelated
+// files' `Scope#initialize` would collide on one qualified name.
+func TestRubyNestedClassQualifiesByEnclosingClass(t *testing.T) {
+	content := []byte("class AgentFlowPolicy\n  class Scope\n    def resolve\n    end\n  end\nend\n")
+	nodes := File("app/policies/agent_flow_policy.rb", content)
+	got := make(map[string]bool)
+	for _, node := range nodes {
+		got[node.QualifiedName] = true
+	}
+	for _, want := range []string{"AgentFlowPolicy", "AgentFlowPolicy::Scope", "AgentFlowPolicy::Scope#resolve"} {
+		if !got[want] {
+			t.Errorf("missing %q in %#v", want, nodes)
+		}
+	}
+	if got["Scope"] || got["Scope#resolve"] {
+		t.Errorf("nested class leaked an unqualified name: %#v", nodes)
 	}
 }
 

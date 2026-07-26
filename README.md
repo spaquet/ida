@@ -72,7 +72,11 @@ Ida is designed to:
 - ingest Markdown, AsciiDoc, HTML, and text documentation;
 - run offline on macOS, Windows, and Linux;
 - use a local Turso database from one Go executable;
-- optionally enrich the graph with Ruby and TypeScript language servers; and
+- optionally enrich the graph with Ruby and TypeScript language servers;
+- surface likely-dead partials/components/methods (`ida unused`, see
+  [Finding unused partials, components, and methods](docs/relationships.md#finding-unused-partials-components-and-methods))
+  and shadowed method/Stimulus-controller declarations (`ida duplicates`, see
+  [Duplicate declarations](docs/relationships.md#duplicate-declarations)); and
 - return bounded source excerpts with provenance, confidence, and freshness.
 
 No UI, embeddings, cloud account, or LLM is required.

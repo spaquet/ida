@@ -321,15 +321,35 @@ var unusedEdgeKindByNodeKind = map[string]string{
 	"view_component": "renders_component",
 }
 
-// Unused returns every node of the given kind ("partial" or
-// "view_component") that has no incoming resolved render edge. It only
-// reports what Ida could not find a renderer for; a partial rendered via an
-// object-based `render @model` call or a dynamically computed name is not
-// tracked and will appear here even though it may be used.
+// Unused returns every node of the given kind ("partial", "view_component",
+// or "method") that has no incoming resolved use.
+//
+// For "partial"/"view_component", "used" means a resolved
+// renders_partial/renders_component edge; a render via an object-based
+// `render @model` call or a dynamically computed name is not tracked and
+// will appear here even though it may be used.
+//
+// For "method", "used" means either a resolved calls/routes_to/
+// stimulus_action edge, or — since most Ruby calls are on a local/instance
+// variable whose class Ida cannot determine (`task.archive!`,
+// `before_action :dev_only`) — a same-named `.method`/`:method` reference
+// anywhere in the codebase (matched by name only, not by receiver type, so
+// two unrelated same-named methods will each suppress the other). Ida also
+// excludes `initialize` (always framework-invoked via `.new`); any method
+// owned by a Pundit-style `*Policy`/`*Policy::Scope` class (invoked by the
+// framework via reflection, never by name in application code); and any
+// `?`/`!`-suffixed predicate or bang method, since those are conventionally
+// invoked from templates, conditionals, and callbacks in ways this
+// name-matching heuristic still cannot see, making them cheap false
+// positives. Treat "method" results as a lead to check, not a dead-code
+// list.
 func Unused(db *store.DB, kind string) ([]store.SearchResult, error) {
+	if kind == "method" {
+		return unusedMethods(db)
+	}
 	edgeKind, ok := unusedEdgeKindByNodeKind[kind]
 	if !ok {
-		return nil, fmt.Errorf("unsupported unused kind %q (want partial or view_component)", kind)
+		return nil, fmt.Errorf("unsupported unused kind %q (want partial, view_component, or method)", kind)
 	}
 	rows, err := db.Query(`
 SELECT n.id, n.kind, n.name, n.qualified_name, f.path, n.start_line, n.end_line,
@@ -338,6 +358,40 @@ FROM nodes n JOIN files f ON f.id = n.file_id
 WHERE n.kind = ?
   AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.target_id = n.id AND e.kind = ?)
 ORDER BY f.path`, kind, edgeKind)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var results []store.SearchResult
+	for rows.Next() {
+		var result store.SearchResult
+		if err := rows.Scan(&result.ID, &result.Kind, &result.Name, &result.QualifiedName, &result.Path,
+			&result.StartLine, &result.EndLine, &result.ContentHash, &result.Confidence, &result.Extractor); err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, rows.Err()
+}
+
+func unusedMethods(db *store.DB) ([]store.SearchResult, error) {
+	rows, err := db.Query(`
+SELECT n.id, n.kind, n.name, n.qualified_name, f.path, n.start_line, n.end_line,
+       f.content_hash, n.confidence, n.extractor
+FROM nodes n JOIN files f ON f.id = n.file_id
+WHERE n.kind = 'method'
+  AND n.name <> 'initialize'
+  AND n.name NOT LIKE '%?'
+  AND n.name NOT LIKE '%!'
+  AND n.qualified_name NOT LIKE '%Policy#%'
+  AND n.qualified_name NOT LIKE '%Policy::Scope#%'
+  AND NOT EXISTS (
+    SELECT 1 FROM edges e WHERE e.target_id = n.id AND e.kind IN ('calls', 'routes_to', 'stimulus_action')
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM nodes u WHERE u.kind = 'method_name_use' AND u.name = n.name
+  )
+ORDER BY f.path`)
 	if err != nil {
 		return nil, err
 	}

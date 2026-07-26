@@ -20,8 +20,8 @@ func TestSyncSearchAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Files != 12 || result.Nodes != 49 {
-		t.Fatalf("Sync() = %#v; want 12 files and 49 nodes", result)
+	if result.Files != 12 || result.Nodes != 55 {
+		t.Fatalf("Sync() = %#v; want 12 files and 55 nodes", result)
 	}
 	db, err := store.OpenExisting(root)
 	if err != nil {
