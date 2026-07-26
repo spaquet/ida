@@ -49,6 +49,9 @@ var (
 	classCallViaNew = regexp.MustCompile(`\b((?:[A-Z][A-Za-z0-9_]*::)*[A-Z][A-Za-z0-9_]*)\.new\b(?:\([^)]*\))?\s*\.\s*([a-z_][A-Za-z0-9_]*[!?]?)\b`)
 
 	envVarUse = regexp.MustCompile(`\bENV(?:\[\s*["']([A-Za-z_][A-Za-z0-9_]*)["']\s*\]|\.fetch\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["'])`)
+
+	dotCallName = regexp.MustCompile(`\.([a-z_][A-Za-z0-9_]*[!?]?)`)
+	symbolName  = regexp.MustCompile(`(?:^|[\s,(\[{]):([a-zA-Z_][A-Za-z0-9_]*[!?]?)`)
 )
 
 // envVarUses scans one line for ENV["NAME"]/ENV['NAME']/ENV.fetch("NAME", ...)
@@ -103,6 +106,26 @@ func methodCallUses(path, text string, line int) []Node {
 		}
 		qualified := m[1] + "#" + m[2]
 		nodes = append(nodes, node(path, "method_call_use", m[2], qualified, line, line, "method-calls-v1"))
+	}
+	return nodes
+}
+
+// methodNameUses scans one line of Ruby for any `.name` call (regardless of
+// receiver, unlike methodCallUses which requires a capitalized constant) and
+// any `:name` symbol literal, recording each by bare method name only. This
+// is not a resolved reference to a specific declaration — `record.save` and
+// `:dev_only` in `before_action :dev_only` are recorded the same way
+// regardless of which class actually defines the method — but it lets `ida
+// unused method` recognize a method as used without requiring Ida to know
+// the receiver's type, which it cannot determine for a local/instance
+// variable. Comments are skipped by the caller.
+func methodNameUses(path, text string, line int) []Node {
+	var nodes []Node
+	for _, m := range dotCallName.FindAllStringSubmatch(text, -1) {
+		nodes = append(nodes, node(path, "method_name_use", m[1], m[1], line, line, "method-name-uses-v1"))
+	}
+	for _, m := range symbolName.FindAllStringSubmatch(text, -1) {
+		nodes = append(nodes, node(path, "method_name_use", m[1], m[1], line, line, "method-name-uses-v1"))
 	}
 	return nodes
 }
@@ -397,6 +420,7 @@ func ruby(path string, content []byte) []Node {
 		nodes = append(nodes, methodCallUses(path, text, line)...)
 		if !strings.HasPrefix(trimmed, "#") {
 			nodes = append(nodes, envVarUses(path, text, line)...)
+			nodes = append(nodes, methodNameUses(path, text, line)...)
 		}
 
 		if trimmed == "end" {
@@ -406,11 +430,15 @@ func ruby(path string, content []byte) []Node {
 			continue
 		}
 		if match := rubyType.FindStringSubmatch(text); match != nil {
-			name := match[2]
-			nodes = append(nodes, node(path, match[1], lastPart(name), name, line, line, "ruby-declarations-v1"))
-			stack = append(stack, classFrame{indent: indent, name: lastPart(name), isClass: match[1] == "class"})
+			declared := match[2]
+			qualified := declared
+			if len(stack) > 0 {
+				qualified = stack[len(stack)-1].name + "::" + declared
+			}
+			nodes = append(nodes, node(path, match[1], lastPart(declared), qualified, line, line, "ruby-declarations-v1"))
+			stack = append(stack, classFrame{indent: indent, name: qualified, isClass: match[1] == "class"})
 			if vc := viewComponentClass.FindStringSubmatch(text); vc != nil {
-				nodes = append(nodes, node(path, "view_component", lastPart(name), name, line, line, "view-components-v1"))
+				nodes = append(nodes, node(path, "view_component", lastPart(declared), qualified, line, line, "view-components-v1"))
 			}
 			continue
 		}

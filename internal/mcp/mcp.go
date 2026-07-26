@@ -49,7 +49,7 @@ var tools = []tool{
 	{Name: "ida_path", Description: "Find a short directed relationship path.", InputSchema: object(map[string]any{"from": stringSchema(), "to": stringSchema(), "depth": integerSchema(1, 6)}, []string{"from", "to"})},
 	{Name: "ida_impact", Description: "Show bounded likely upstream and downstream effects.", InputSchema: object(map[string]any{"name": stringSchema(), "depth": integerSchema(1, 4), "limit": integerSchema(1, 100)}, []string{"name"})},
 	{Name: "ida_refresh", Description: "Refresh changed paths or reconcile the full index.", InputSchema: object(map[string]any{"paths": map[string]any{"type": "array", "items": stringSchema(), "maxItems": 1000}}, nil)},
-	{Name: "ida_unused", Description: "List partials or view components with no resolved render edge.", InputSchema: object(map[string]any{"kind": stringSchema()}, []string{"kind"})},
+	{Name: "ida_unused", Description: "List partials, view components, or methods with no resolved incoming use.", InputSchema: object(map[string]any{"kind": stringSchema()}, []string{"kind"})},
 	{Name: "ida_duplicates", Description: "List method or Stimulus controller declarations sharing one qualified name.", InputSchema: object(map[string]any{"kind": stringSchema()}, []string{"kind"})},
 	{Name: "ida_env", Description: "List ENV variable reads, grouped by name.", InputSchema: object(nil, nil)},
 }

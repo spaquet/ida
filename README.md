@@ -73,8 +73,8 @@ Ida is designed to:
 - run offline on macOS, Windows, and Linux;
 - use a local Turso database from one Go executable;
 - optionally enrich the graph with Ruby and TypeScript language servers;
-- surface likely-dead partials/components (`ida unused`, see
-  [Finding unused partials and components](docs/relationships.md#finding-unused-partials-and-components))
+- surface likely-dead partials/components/methods (`ida unused`, see
+  [Finding unused partials, components, and methods](docs/relationships.md#finding-unused-partials-components-and-methods))
   and shadowed method/Stimulus-controller declarations (`ida duplicates`, see
   [Duplicate declarations](docs/relationships.md#duplicate-declarations)); and
 - return bounded source excerpts with provenance, confidence, and freshness.

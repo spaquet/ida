@@ -179,15 +179,20 @@ Omit `paths` to perform the same complete rebuild as `ida sync --rebuild`.
 
 ### `ida_unused`
 
-List partials or view components with no resolved render edge.
+List nodes of the given kind with no resolved incoming use.
 
 | Parameter | Required | Default | Bounds |
 | --- | --- | --- | --- |
-| `kind` | yes | — | `partial` or `view_component` |
+| `kind` | yes | — | `partial`, `view_component`, or `method` |
 
 ```json
 {"kind":"partial"}
 ```
+
+For `method`, "used" also includes a same-named `.method`/`:method`
+reference anywhere in the codebase, matched by name only — see
+[`ida unused`](cli.md#ida-unused-partialview_componentmethod) for the full
+caveats and exclusions.
 
 ### `ida_duplicates`
 

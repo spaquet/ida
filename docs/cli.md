@@ -197,14 +197,30 @@ multi-tenant `Organization`) would surface most of the app as "impacted,"
 which is not useful. Use `ida path <from> <to>` to check a specific
 multi-hop connection instead of widening `impact`.
 
-### `ida unused <partial|view_component>`
+### `ida unused <partial|view_component|method>`
 
-List partials or view components with no resolved render edge.
+List nodes of the given kind with no resolved incoming use.
 
 ```sh
 ida unused partial
 ida unused view_component
+ida unused method
 ```
+
+For `partial`/`view_component`, "used" means a resolved `renders_partial`/
+`renders_component` edge.
+
+For `method`, coverage is broader but heuristic: "used" means a resolved
+`calls`/`routes_to`/`stimulus_action` edge, or a same-named `.method`/
+`:method` reference anywhere in the codebase — matched by name only, since
+most Ruby calls are on a local/instance variable whose class Ida cannot
+determine (`task.archive!`, `before_action :dev_only`). `initialize`,
+Pundit-style `*Policy`/`*Policy::Scope` methods, and `?`/`!`-suffixed
+predicate/bang methods are excluded outright, since those are conventionally
+invoked by the framework or from templates in ways this heuristic cannot
+see. Treat `method` results as a lead to check, not a dead-code list — a
+method called only from an ERB template as a bare `<%= helper_method %>`,
+for example, will still appear here.
 
 ### `ida duplicates <method|stimulus_controller>`
 

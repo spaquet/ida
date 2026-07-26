@@ -48,8 +48,8 @@ Commands:
   node <name-or-id>    Explain one graph node
   path <from> <to>     Find a relationship path
   impact <name-or-id>  Show likely change effects
-  unused <partial|view_component>
-                       List partials or view components with no resolved render
+  unused <partial|view_component|method>
+                       List nodes with no resolved incoming use
   duplicates <method|stimulus_controller>
                        List declarations sharing one qualified name
   env                  List ENV variable reads, grouped by name
@@ -232,7 +232,7 @@ func run(args []string) error {
 		return printValue(decision, jsonOutput)
 	case "unused":
 		if len(args) != 2 {
-			return errors.New("usage: ida unused <partial|view_component>")
+			return errors.New("usage: ida unused <partial|view_component|method>")
 		}
 		root, err := project.Discover(".")
 		if err != nil {
