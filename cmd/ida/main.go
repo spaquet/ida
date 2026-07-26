@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	version = "0.1.0"
+	version = "0.2.0"
 	help    = `Ida is a local-first knowledge graph for Rails applications.
 
 Usage:
@@ -33,7 +33,8 @@ Usage:
 Commands:
   init [path] [--install-lsp]
                        Configure and build the first index
-  sync [path]          Reconcile the index with disk
+  sync [path] [--rebuild]
+                       Reconcile the index with disk, or force a full rebuild
   watch [path]         Keep the index current
   status [path]        Report index and watcher health
   doctor [path]        Check Rails, index, watcher, and LSP health
@@ -105,11 +106,20 @@ func run(args []string) error {
 		}
 		return err
 	case "sync":
-		root, err := project.Discover(arg(args, 1, "."))
+		path, rebuild, err := syncArgs(args[1:])
 		if err != nil {
 			return err
 		}
-		result, err := index.Sync(root)
+		root, err := project.Discover(path)
+		if err != nil {
+			return err
+		}
+		var result index.Result
+		if rebuild || !indexExists(root) {
+			result, err = index.Sync(root)
+		} else {
+			result, err = index.Reconcile(root)
+		}
 		if err != nil {
 			return err
 		}
@@ -272,6 +282,32 @@ func arg(args []string, i int, fallback string) string {
 		return args[i]
 	}
 	return fallback
+}
+
+func indexExists(root string) bool {
+	db, err := store.OpenExisting(root)
+	if err != nil {
+		return false
+	}
+	_ = db.Close()
+	return true
+}
+
+func syncArgs(args []string) (string, bool, error) {
+	path := "."
+	pathSet := false
+	rebuild := false
+	for _, value := range args {
+		if value == "--rebuild" {
+			rebuild = true
+		} else if !pathSet {
+			path = value
+			pathSet = true
+		} else {
+			return "", false, errors.New("usage: ida sync [path] [--rebuild]")
+		}
+	}
+	return path, rebuild, nil
 }
 
 func initArgs(args []string) (string, bool, error) {

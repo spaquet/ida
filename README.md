@@ -8,10 +8,12 @@ controllers, views, Active Record, jobs, mailers, Turbo Streams, Stimulus,
 React, and Tailwind CSS. Agents access the current graph through a small CLI or
 MCP server instead of repeatedly scanning the repository.
 
-> Status: early implementation. Project discovery, scope, local indexing,
-> incremental watching, bounded CLI/MCP queries, and conservative Rails
-> route-to-action-to-view relationships are available. Broader framework
-> extraction and optional LSP enrichment remain planned.
+> Status: early implementation. Project discovery and scope (including nested
+> Rails engines), local indexing, incremental watching, bounded CLI/MCP
+> queries, and conservative Rails relationships (routes including `resources`/
+> `namespace` macros, route-to-action-to-view, associations, and document
+> mentions) are available. Broader framework extraction (Turbo, Stimulus,
+> React, Tailwind) and optional LSP enrichment remain planned.
 
 ## Why Ida?
 

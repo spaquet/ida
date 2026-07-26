@@ -19,3 +19,17 @@ func TestInitArgs(t *testing.T) {
 		t.Fatal("initArgs accepted two paths")
 	}
 }
+
+func TestSyncArgs(t *testing.T) {
+	path, rebuild, err := syncArgs([]string{"--rebuild", "."})
+	if err != nil || path != "." || !rebuild {
+		t.Fatalf("syncArgs() = %q, %v, %v", path, rebuild, err)
+	}
+	path, rebuild, err = syncArgs(nil)
+	if err != nil || path != "." || rebuild {
+		t.Fatalf("syncArgs(nil) = %q, %v, %v", path, rebuild, err)
+	}
+	if _, _, err := syncArgs([]string{".", "other"}); err == nil {
+		t.Fatal("syncArgs accepted two paths")
+	}
+}

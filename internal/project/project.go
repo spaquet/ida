@@ -6,11 +6,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 )
 
 var markers = []string{"Gemfile", "config/application.rb", "config/routes.rb"}
+
+var railsEngineClass = regexp.MustCompile(`class\s+\w+(::\w+)*\s*<\s*Rails::Engine\b`)
 
 type Config struct {
 	Include []string            `json:"include,omitempty"`
@@ -23,6 +26,7 @@ type Scope struct {
 	root      string
 	config    Config
 	gitignore []string
+	engines   []string
 }
 
 type Decision struct {
@@ -83,7 +87,76 @@ func LoadScope(root string) (*Scope, error) {
 			}
 		}
 	}
+	engines, err := discoverEngines(root)
+	if err != nil {
+		return nil, err
+	}
+	scope.engines = engines
 	return scope, nil
+}
+
+// discoverEngines finds Rails engines mounted inside the project: any
+// lib/<name>/engine.rb file declaring a class inheriting from Rails::Engine.
+// It returns each engine's project-relative root directory.
+func discoverEngines(root string) ([]string, error) {
+	var engines []string
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relative, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		relative = filepath.ToSlash(relative)
+		if entry.IsDir() {
+			if relative != "." && hardExcluded(relative+"/x") != "" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Base(relative) != "engine.rb" {
+			return nil
+		}
+		dir := filepath.ToSlash(filepath.Dir(relative))
+		parts := strings.Split(dir, "/")
+		if len(parts) < 2 || parts[len(parts)-2] != "lib" {
+			return nil
+		}
+		content, readErr := os.ReadFile(path)
+		if readErr != nil || !railsEngineClass.Match(content) {
+			return nil
+		}
+		if engineRoot := strings.Join(parts[:len(parts)-2], "/"); engineRoot != "" {
+			engines = append(engines, engineRoot)
+		}
+		return nil
+	})
+	slices.Sort(engines)
+	return engines, err
+}
+
+// Engines returns the project-relative root directories of Rails engines
+// discovered inside the project.
+func (s *Scope) Engines() []string {
+	return append([]string(nil), s.engines...)
+}
+
+// engineIncluded reports whether path falls under a discovered engine's root
+// at a location that would be included by Rails default scope rules if that
+// engine root were itself a project root.
+func (s *Scope) engineIncluded(path string) bool {
+	for _, engineRoot := range s.engines {
+		prefix := engineRoot + "/"
+		sub, ok := strings.CutPrefix(path, prefix)
+		if !ok || hardExcluded(sub) != "" {
+			continue
+		}
+		if defaultIncluded(sub) {
+			return true
+		}
+	}
+	return false
 }
 
 func LoadConfig(root string) (Config, error) {
@@ -197,6 +270,10 @@ func (s *Scope) Decide(path string) Decision {
 	}
 	if defaultIncluded(relative) || matchesAny(relative, s.config.Docs) {
 		decision.Included, decision.Reason = true, "Rails default"
+		return decision
+	}
+	if s.engineIncluded(relative) {
+		decision.Included, decision.Reason = true, "Rails engine default"
 		return decision
 	}
 	decision.Reason = "not in default scope"

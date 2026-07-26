@@ -57,6 +57,42 @@ func TestDiscoveryAndScope(t *testing.T) {
 	}
 }
 
+func TestEngineRecognition(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"Gemfile":               "x",
+		"config/application.rb": "x",
+		"config/routes.rb":      "x",
+		"engines/payments/lib/payments/engine.rb":   "module Payments\n  class Engine < Rails::Engine\n  end\nend\n",
+		"engines/payments/app/models/charge.rb":     "class Charge\nend\n",
+		"engines/payments/app/assets/builds/app.js": "x",
+	}
+	for path, content := range files {
+		full := filepath.Join(root, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	scope, err := LoadScope(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if engines := scope.Engines(); len(engines) != 1 || engines[0] != "engines/payments" {
+		t.Fatalf("Engines() = %#v; want [engines/payments]", engines)
+	}
+	for path, want := range map[string]bool{
+		"engines/payments/app/models/charge.rb":     true,
+		"engines/payments/app/assets/builds/app.js": false,
+	} {
+		if decision := scope.Decide(path); decision.Included != want {
+			t.Errorf("Decide(%q) = %#v; want included=%v", path, decision, want)
+		}
+	}
+}
+
 func TestAddDocumentSource(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "handbook")

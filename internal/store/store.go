@@ -151,10 +151,45 @@ CREATE TABLE IF NOT EXISTS document_sections (
   heading_path TEXT NOT NULL,
   body TEXT NOT NULL,
   start_line INTEGER NOT NULL,
-  end_line INTEGER NOT NULL
+  end_line INTEGER NOT NULL,
+  links TEXT NOT NULL DEFAULT '[]',
+  mentions TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS document_sections_document_id ON document_sections(document_id);
 `)
+	if err != nil {
+		return err
+	}
+	if err := db.ensureColumn("document_sections", "links", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	return db.ensureColumn("document_sections", "mentions", "TEXT NOT NULL DEFAULT '[]'")
+}
+
+// ensureColumn adds a column to an existing database created before that
+// column existed. CREATE TABLE IF NOT EXISTS does not retrofit new columns.
+func (db *DB) ensureColumn(table, column, definition string) error {
+	rows, err := db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull, pk int
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			return rows.Err()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = db.Exec("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition)
 	return err
 }
 

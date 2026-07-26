@@ -57,14 +57,20 @@ Ruby LSP is installed with `gem install ruby-lsp`, following its composed-bundle
 model rather than editing the application Gemfile. If `package.json` exists,
 TypeScript Language Server is offered as a project development dependency.
 
-### `ida sync [path]`
+### `ida sync [path] [--rebuild]`
 
-Rebuild the complete index from the current project scope. Use this as the
-manual recovery command after missed filesystem events or degraded status.
-`path` defaults to the current directory.
+Reconcile the index with disk: hash-check every scoped file and re-extract
+only what changed, added, or was removed. Use this as the manual recovery
+command after missed filesystem events or degraded status. `path` defaults to
+the current directory.
+
+Pass `--rebuild` to force a complete rebuild instead, discarding the existing
+index and re-extracting every scoped file. `ida sync` also rebuilds
+automatically the first time it runs against a project with no index yet.
 
 ```sh
 ida sync
+ida sync --rebuild
 ```
 
 ### `ida watch [path]`
@@ -91,9 +97,9 @@ ida status --json
 ### `ida doctor [path]`
 
 Check Rails discovery, database accessibility, index completeness, watcher
-health, pending files, and configured or detected language servers. Missing
-optional LSPs include an installation command but do not make the deterministic
-index unavailable.
+health, pending files, recognized Rails engines, and configured or detected
+language servers. Missing optional LSPs include an installation command but do
+not make the deterministic index unavailable.
 
 ```sh
 ida doctor
@@ -103,6 +109,9 @@ ida doctor --json
 ### `ida scope <path>`
 
 Explain whether a project-relative or absolute path is included and why.
+Paths inside a recognized Rails engine (a `lib/<name>/engine.rb` declaring a
+class under `Rails::Engine`) are included using the same default rules Ida
+applies at the project root, reported as `Rails engine default`.
 
 ```sh
 ida scope app/models/article.rb
@@ -178,6 +187,12 @@ Remote fetching blocks private/local networks and credentials in URLs, follows
 at most five redirects, times out after ten seconds, and accepts at most 2 MiB
 of text. It does not crawl links or render JavaScript.
 
+Every document section records its outbound links (Markdown, HTML) and its
+explicit code-symbol mentions (backtick-quoted spans with no whitespace, such
+as `` `ArticlesController` `` or `` `app/models/article.rb` ``). A local
+section's unambiguous mentions become `mentions` edges to the matching graph
+node.
+
 ### `ida mcp [path]`
 
 Serve the seven Ida MCP tools over stdio and keep the index current with an
@@ -188,12 +203,3 @@ ida mcp /absolute/path/to/my_app
 ```
 
 See [MCP reference](mcp.md) for client configuration and tool schemas.
-
-## Planned commands
-
-The product requirements include commands that are not implemented yet:
-
-- `ida sync --rebuild` as a distinct mode
-
-Until that mode exists, the CLI returns an unsupported argument error rather
-than pretending the operation succeeded.
