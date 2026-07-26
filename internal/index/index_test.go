@@ -19,8 +19,8 @@ func TestSyncSearchAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Files != 4 || result.Nodes != 9 {
-		t.Fatalf("Sync() = %#v; want 4 files and 9 nodes", result)
+	if result.Files != 6 || result.Nodes != 14 {
+		t.Fatalf("Sync() = %#v; want 6 files and 14 nodes", result)
 	}
 	db, err := store.OpenExisting(root)
 	if err != nil {
@@ -37,5 +37,28 @@ func TestSyncSearchAndContext(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, ".ida", "ida.db")); err != nil {
 		t.Fatal(err)
+	}
+	var edges int
+	if err := db.QueryRow("SELECT count(*) FROM edges").Scan(&edges); err != nil || edges != 2 {
+		t.Fatalf("edge count = %d, %v; want 2", edges, err)
+	}
+	path, err := query.Path(db, "GET /articles", "app/views/articles/index.html.erb", 3)
+	if err != nil || len(path.Edges) != 2 || path.Edges[0].Kind != "routes_to" || path.Edges[1].Kind != "renders" {
+		t.Fatalf("Path() = %#v, %v", path, err)
+	}
+	impact, err := query.Impact(db, "index", 2, 10)
+	if err != nil || len(impact) != 2 {
+		t.Fatalf("Impact() = %#v, %v", impact, err)
+	}
+
+	articlePath := filepath.Join(root, "app", "models", "article.rb")
+	if err := os.WriteFile(articlePath, []byte("class Story\nend\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := index.Reconcile(root); err != nil {
+		t.Fatal(err)
+	}
+	if results, err := query.Search(db, "Story", 10); err != nil || len(results) != 1 {
+		t.Fatalf("Search(Story) = %#v, %v", results, err)
 	}
 }

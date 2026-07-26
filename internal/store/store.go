@@ -20,6 +20,7 @@ type Status struct {
 	Generation int64  `json:"generation"`
 	Files      int    `json:"files"`
 	Nodes      int    `json:"nodes"`
+	Edges      int    `json:"edges"`
 	IndexedAt  string `json:"indexed_at"`
 	LastError  string `json:"last_error,omitempty"`
 }
@@ -35,6 +36,17 @@ type SearchResult struct {
 	ContentHash   string `json:"content_hash"`
 	Confidence    string `json:"confidence"`
 	Extractor     string `json:"extractor"`
+}
+
+type Edge struct {
+	ID         string `json:"id"`
+	SourceID   string `json:"source_id"`
+	TargetID   string `json:"target_id"`
+	Kind       string `json:"kind"`
+	Confidence string `json:"confidence"`
+	Path       string `json:"path"`
+	StartLine  int    `json:"start_line"`
+	Evidence   string `json:"evidence"`
 }
 
 func Open(root string) (*DB, error) {
@@ -99,6 +111,19 @@ CREATE TABLE IF NOT EXISTS nodes (
 CREATE INDEX IF NOT EXISTS nodes_name ON nodes(name);
 CREATE INDEX IF NOT EXISTS nodes_qualified_name ON nodes(qualified_name);
 CREATE INDEX IF NOT EXISTS nodes_file_id ON nodes(file_id);
+CREATE TABLE IF NOT EXISTS edges (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  confidence TEXT NOT NULL,
+  file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  start_line INTEGER NOT NULL,
+  evidence TEXT NOT NULL,
+  generation INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS edges_source_kind ON edges(source_id, kind);
+CREATE INDEX IF NOT EXISTS edges_target_kind ON edges(target_id, kind);
 `)
 	return err
 }
@@ -107,8 +132,8 @@ func (db *DB) Status() (Status, error) {
 	var status Status
 	err := db.QueryRow(`
 SELECT state, generation, indexed_at, error,
-       (SELECT count(*) FROM files), (SELECT count(*) FROM nodes)
-FROM projects WHERE id = 1`).Scan(&status.State, &status.Generation, &status.IndexedAt, &status.LastError, &status.Files, &status.Nodes)
+       (SELECT count(*) FROM files), (SELECT count(*) FROM nodes), (SELECT count(*) FROM edges)
+FROM projects WHERE id = 1`).Scan(&status.State, &status.Generation, &status.IndexedAt, &status.LastError, &status.Files, &status.Nodes, &status.Edges)
 	return status, err
 }
 

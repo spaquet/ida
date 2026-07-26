@@ -8,7 +8,7 @@ import (
 
 func TestDiscoveryAndScope(t *testing.T) {
 	root := t.TempDir()
-	for _, path := range []string{"Gemfile", "config/application.rb", "config/routes.rb", "app/models/user.rb", "app/assets/builds/app.js", ".env", "docs/guide.md"} {
+	for _, path := range []string{"Gemfile", "config/application.rb", "config/routes.rb", "app/models/user.rb", "app/assets/builds/app.js", ".env", "docs/guide.md", "test/models/user_test.rb", "spec/models/user_spec.rb"} {
 		full := filepath.Join(root, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			t.Fatal(err)
@@ -35,9 +35,24 @@ func TestDiscoveryAndScope(t *testing.T) {
 		"docs/guide.md":            true,
 		"app/assets/builds/app.js": false,
 		".env":                     false,
+		"test/models/user_test.rb": false,
+		"spec/models/user_spec.rb": false,
 	} {
 		if got := scope.Decide(path).Included; got != want {
 			t.Errorf("Decide(%q).Included = %v; want %v", path, got, want)
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(root, "ida.json"), []byte(`{"include":["test/**","spec/**"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	scope, err = LoadScope(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"test/models/user_test.rb", "spec/models/user_spec.rb"} {
+		if decision := scope.Decide(path); !decision.Included || decision.Reason != "ida.json include" {
+			t.Errorf("Decide(%q) = %#v; want ida.json include", path, decision)
 		}
 	}
 }

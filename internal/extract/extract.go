@@ -24,6 +24,7 @@ type Node struct {
 var (
 	rubyType   = regexp.MustCompile(`^\s*(class|module)\s+([A-Z][A-Za-z0-9_:]*)`)
 	rubyMethod = regexp.MustCompile(`^\s*def\s+(self\.)?([A-Za-z_][A-Za-z0-9_!?=]*)`)
+	route      = regexp.MustCompile(`^\s*(get|post|put|patch|delete)\s+["']([^"']+)["'](?:\s*,?\s*(?:to:|=>)\s*["']([^"'#]+)#([^"']+)["'])`)
 	heading    = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
 	adocHead   = regexp.MustCompile(`^(={1,6})\s+(.+?)\s*$`)
 )
@@ -34,8 +35,25 @@ func File(path string, content []byte) []Node {
 	if ext == ".rb" {
 		nodes = append(nodes, ruby(path, content)...)
 	}
+	if path == "config/routes.rb" {
+		nodes = append(nodes, routes(path, content)...)
+	}
 	if ext == ".md" || ext == ".markdown" || ext == ".adoc" || ext == ".asciidoc" {
 		nodes = append(nodes, headings(path, content, ext)...)
+	}
+	return nodes
+}
+
+func routes(path string, content []byte) []Node {
+	var nodes []Node
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	for line := 1; scanner.Scan(); line++ {
+		match := route.FindStringSubmatch(scanner.Text())
+		if match == nil {
+			continue
+		}
+		name := strings.ToUpper(match[1]) + " " + match[2]
+		nodes = append(nodes, node(path, "route", name, match[3]+"#"+match[4], line, line, "rails-routes-v1"))
 	}
 	return nodes
 }

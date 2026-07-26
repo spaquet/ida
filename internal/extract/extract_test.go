@@ -15,3 +15,10 @@ func TestRubyDeclarations(t *testing.T) {
 		}
 	}
 }
+
+func TestRouteDeclaration(t *testing.T) {
+	nodes := File("config/routes.rb", []byte(`get "/articles", to: "articles#index"`))
+	if len(nodes) != 2 || nodes[1].Kind != "route" || nodes[1].Name != "GET /articles" || nodes[1].QualifiedName != "articles#index" {
+		t.Fatalf("File() = %#v", nodes)
+	}
+}

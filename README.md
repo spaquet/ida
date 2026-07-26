@@ -8,9 +8,10 @@ controllers, views, Active Record, jobs, mailers, Turbo Streams, Stimulus,
 React, and Tailwind CSS. Agents access the current graph through a small CLI or
 MCP server instead of repeatedly scanning the repository.
 
-> Status: foundation implementation. Project discovery, scope, local indexing,
-> status, search, and bounded source context are available; relationship
-> resolution, watching, MCP, and framework-specific extraction remain planned.
+> Status: early implementation. Project discovery, scope, local indexing,
+> incremental watching, bounded CLI/MCP queries, and conservative Rails
+> route-to-action-to-view relationships are available. Broader framework
+> extraction and optional LSP enrichment remain planned.
 
 ## Why Ida?
 
@@ -31,7 +32,7 @@ connects the two.
 ida init .
 ida status
 ida context "How does a comment update reach the browser?"
-ida impact Comment#publish
+ida impact publish
 ida mcp
 ```
 
@@ -43,6 +44,8 @@ go build -o ida ./cmd/ida
 ./ida status
 ./ida search Comment
 ./ida context "Comment#publish"
+./ida watch
+./ida mcp
 ```
 
 Ida is designed to:
@@ -61,6 +64,9 @@ No UI, embeddings, cloud account, or LLM is required.
 
 - [Product requirements](docs/product-requirements.md)
 - [Architecture](docs/architecture.md)
+- [CLI reference](docs/cli.md)
+- [MCP reference](docs/mcp.md)
+- [Relationship resolution](docs/relationships.md)
 - [Coding-agent guidance](AGENTS.md)
 
 ## Planned development
