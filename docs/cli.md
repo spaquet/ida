@@ -34,6 +34,10 @@ Normal output uses stdout. Diagnostics and watcher messages use stderr. A
 successful command exits with status `0`; invalid input or an operational error
 exits with status `1`.
 
+`ida --help` (or `ida -h`) prints the command summary. `ida --version` prints
+the installed Ida version. The `help` and `version` command aliases are also
+accepted.
+
 ## Implemented commands
 
 ### `ida init [path]`

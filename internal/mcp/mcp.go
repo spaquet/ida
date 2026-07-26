@@ -51,6 +51,11 @@ var tools = []tool{
 }
 
 func Serve(parent context.Context, root string, input io.Reader, output, diagnostics io.Writer) error {
+	db, err := store.OpenExisting(root)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	updates := make(chan watch.Update, 8)
@@ -83,7 +88,7 @@ func Serve(parent context.Context, root string, input io.Reader, output, diagnos
 			}
 			continue
 		}
-		result, rpcErr := handle(root, request)
+		result, rpcErr := handle(root, db, request)
 		if len(request.ID) == 0 {
 			continue
 		}
@@ -94,7 +99,7 @@ func Serve(parent context.Context, root string, input io.Reader, output, diagnos
 	return scanner.Err()
 }
 
-func handle(root string, request request) (any, *rpcError) {
+func handle(root string, db *store.DB, request request) (any, *rpcError) {
 	switch request.Method {
 	case "initialize":
 		return map[string]any{
@@ -116,7 +121,7 @@ func handle(root string, request request) (any, *rpcError) {
 		if err := decode(request.Params, &call); err != nil {
 			return nil, invalid(err)
 		}
-		value, err := callTool(root, call.Name, call.Arguments)
+		value, err := callTool(root, db, call.Name, call.Arguments)
 		if err != nil {
 			return map[string]any{"content": []any{map[string]any{"type": "text", "text": err.Error()}}, "isError": true}, nil
 		}
@@ -134,7 +139,7 @@ func handle(root string, request request) (any, *rpcError) {
 	}
 }
 
-func callTool(root, name string, arguments json.RawMessage) (any, error) {
+func callTool(root string, db *store.DB, name string, arguments json.RawMessage) (any, error) {
 	if name == "ida_refresh" {
 		var input struct {
 			Paths []string `json:"paths"`
@@ -155,11 +160,6 @@ func callTool(root, name string, arguments json.RawMessage) (any, error) {
 		}
 		return index.Refresh(root, input.Paths)
 	}
-	db, err := store.OpenExisting(root)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
 	switch name {
 	case "ida_status":
 		if err := decode(arguments, &struct{}{}); err != nil {

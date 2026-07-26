@@ -2,10 +2,10 @@ package watch
 
 import (
 	"context"
-	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,6 +37,14 @@ func Run(ctx context.Context, root string, updates chan<- Update) error {
 	if err := addInitialDirs(watcher, root, scope); err != nil {
 		return err
 	}
+	health, err := store.OpenExisting(root)
+	if err != nil {
+		return err
+	}
+	defer health.Close()
+	// ponytail: one row is enough until concurrent watcher diagnostics matter.
+	health.SetWatcherStatus("watching", nil, "")
+	defer health.SetWatcherStatus("stopped", nil, "")
 	send(updates, Update{})
 
 	pending := make(map[string]bool)
@@ -65,6 +73,7 @@ func Run(ctx context.Context, root string, updates chan<- Update) error {
 			}
 			if scope.Decide(relative).Included || event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
 				pending[relative] = true
+				health.SetWatcherStatus("pending", keys(pending), "")
 				if timer == nil {
 					timer = time.NewTimer(150 * time.Millisecond)
 					timerC = timer.C
@@ -84,15 +93,26 @@ func Run(ctx context.Context, root string, updates chan<- Update) error {
 			timerC = nil
 			timer = nil
 			_, err := index.Refresh(root, paths)
+			if err != nil {
+				health.SetWatcherStatus("degraded", paths, err.Error())
+			} else {
+				health.SetWatcherStatus("watching", nil, "")
+			}
 			send(updates, Update{Paths: paths, Err: err})
 		case err, ok := <-watcher.Errors:
 			if !ok {
 				return nil
 			}
-			markDegraded(root, err)
+			health.MarkFailed("watcher: " + err.Error())
+			health.SetWatcherStatus("degraded", keys(pending), err.Error())
 			send(updates, Update{Err: err})
 		case <-scan.C:
 			_, err := index.Reconcile(root)
+			if err != nil {
+				health.SetWatcherStatus("degraded", keys(pending), err.Error())
+			} else {
+				health.SetWatcherStatus("watching", nil, "")
+			}
 			send(updates, Update{Err: err})
 		}
 	}
@@ -137,6 +157,7 @@ func keys(values map[string]bool) []string {
 	for value := range values {
 		result = append(result, value)
 	}
+	slices.Sort(result)
 	return result
 }
 
@@ -147,13 +168,5 @@ func send(updates chan<- Update, update Update) {
 	select {
 	case updates <- update:
 	default:
-	}
-}
-
-func markDegraded(root string, err error) {
-	db, openErr := store.Open(root)
-	if openErr == nil {
-		defer db.Close()
-		db.MarkFailed(errors.New("watcher: " + err.Error()).Error())
 	}
 }

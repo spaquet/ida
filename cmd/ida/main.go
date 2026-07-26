@@ -18,6 +18,35 @@ import (
 	"github.com/spaquet/ida/internal/watch"
 )
 
+const (
+	version = "0.1.0"
+	help    = `Ida is a local-first knowledge graph for Rails applications.
+
+Usage:
+  ida [--json] <command> [arguments]
+  ida --help
+  ida --version
+
+Commands:
+  init [path]          Configure and build the first index
+  sync [path]          Reconcile the index with disk
+  watch [path]         Keep the index current
+  status [path]        Report index and watcher health
+  scope <path>         Explain whether a path is indexed
+  search <query>       Search files and symbols
+  context <task>       Return bounded source context
+  node <name-or-id>    Explain one graph node
+  path <from> <to>     Find a relationship path
+  impact <name-or-id>  Show likely change effects
+  mcp [path]           Serve MCP over stdio
+
+Options:
+  --json              Print structured command output
+  -h, --help          Show this help
+  --version           Show the Ida version
+`
+)
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "ida:", err)
@@ -26,6 +55,16 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) == 1 {
+		switch args[0] {
+		case "-h", "--help", "help":
+			fmt.Print(help)
+			return nil
+		case "--version", "version":
+			fmt.Println("ida " + version)
+			return nil
+		}
+	}
 	jsonOutput := false
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--json" {
@@ -35,7 +74,7 @@ func run(args []string) error {
 		}
 	}
 	if len(args) == 0 {
-		return errors.New("usage: ida <init|sync|watch|status|scope|search|context|node|path|impact|mcp> [arguments]")
+		return errors.New("usage: ida [--json] <command> [arguments]; run ida --help")
 	}
 
 	switch args[0] {
@@ -177,7 +216,16 @@ func printValue(v any, asJSON bool) error {
 	case index.Result:
 		fmt.Printf("indexed %d files and %d nodes (generation %d)\n", value.Files, value.Nodes, value.Generation)
 	case store.Status:
-		fmt.Printf("state: %s\ngeneration: %d\nfiles: %d\nnodes: %d\nedges: %d\nindexed: %s\n", value.State, value.Generation, value.Files, value.Nodes, value.Edges, value.IndexedAt)
+		fmt.Printf("state: %s\ngeneration: %d\nfiles: %d\nnodes: %d\nedges: %d\nindexed: %s\nwatcher: %s\npending: %d\n", value.State, value.Generation, value.Files, value.Nodes, value.Edges, value.IndexedAt, value.WatcherState, len(value.PendingFiles))
+		if value.LastError != "" {
+			fmt.Printf("last error: %s\n", value.LastError)
+		}
+		if value.WatcherError != "" {
+			fmt.Printf("watcher error: %s\n", value.WatcherError)
+		}
+		for _, path := range value.PendingFiles {
+			fmt.Printf("pending file: %s\n", path)
+		}
 	case project.Decision:
 		fmt.Printf("%s: %s (%s)\n", value.Path, map[bool]string{true: "included", false: "excluded"}[value.Included], value.Reason)
 	case []store.SearchResult:

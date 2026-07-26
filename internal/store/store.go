@@ -2,9 +2,11 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,13 +18,16 @@ type DB struct {
 }
 
 type Status struct {
-	State      string `json:"state"`
-	Generation int64  `json:"generation"`
-	Files      int    `json:"files"`
-	Nodes      int    `json:"nodes"`
-	Edges      int    `json:"edges"`
-	IndexedAt  string `json:"indexed_at"`
-	LastError  string `json:"last_error,omitempty"`
+	State        string   `json:"state"`
+	Generation   int64    `json:"generation"`
+	Files        int      `json:"files"`
+	Nodes        int      `json:"nodes"`
+	Edges        int      `json:"edges"`
+	IndexedAt    string   `json:"indexed_at"`
+	LastError    string   `json:"last_error,omitempty"`
+	WatcherState string   `json:"watcher_state"`
+	PendingFiles []string `json:"pending_files"`
+	WatcherError string   `json:"watcher_error,omitempty"`
 }
 
 type SearchResult struct {
@@ -124,21 +129,49 @@ CREATE TABLE IF NOT EXISTS edges (
 );
 CREATE INDEX IF NOT EXISTS edges_source_kind ON edges(source_id, kind);
 CREATE INDEX IF NOT EXISTS edges_target_kind ON edges(target_id, kind);
+CREATE TABLE IF NOT EXISTS watcher_status (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  state TEXT NOT NULL DEFAULT 'inactive',
+  pending_files TEXT NOT NULL DEFAULT '[]',
+  error TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT ''
+);
+INSERT OR IGNORE INTO watcher_status (id) VALUES (1);
 `)
 	return err
 }
 
 func (db *DB) Status() (Status, error) {
 	var status Status
+	var pending string
 	err := db.QueryRow(`
 SELECT state, generation, indexed_at, error,
-       (SELECT count(*) FROM files), (SELECT count(*) FROM nodes), (SELECT count(*) FROM edges)
-FROM projects WHERE id = 1`).Scan(&status.State, &status.Generation, &status.IndexedAt, &status.LastError, &status.Files, &status.Nodes, &status.Edges)
+       (SELECT count(*) FROM files), (SELECT count(*) FROM nodes), (SELECT count(*) FROM edges),
+       (SELECT state FROM watcher_status WHERE id = 1),
+       (SELECT pending_files FROM watcher_status WHERE id = 1),
+       (SELECT error FROM watcher_status WHERE id = 1)
+FROM projects WHERE id = 1`).Scan(
+		&status.State, &status.Generation, &status.IndexedAt, &status.LastError,
+		&status.Files, &status.Nodes, &status.Edges, &status.WatcherState, &pending, &status.WatcherError,
+	)
+	if err == nil {
+		err = json.Unmarshal([]byte(pending), &status.PendingFiles)
+	}
 	return status, err
 }
 
 func (db *DB) MarkFailed(message string) {
 	_, _ = db.Exec("UPDATE projects SET state = 'degraded', error = ? WHERE id = 1", message)
+}
+
+func (db *DB) SetWatcherStatus(state string, paths []string, message string) {
+	paths = append([]string(nil), paths...)
+	slices.Sort(paths)
+	pending, _ := json.Marshal(paths)
+	_, _ = db.Exec(
+		"UPDATE watcher_status SET state = ?, pending_files = ?, error = ?, updated_at = ? WHERE id = 1",
+		state, string(pending), message, IndexedAt(),
+	)
 }
 
 func IndexedAt() string {
