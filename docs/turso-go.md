@@ -1,0 +1,172 @@
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.turso.tech/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+# Turso Quickstart (Go)
+
+> Get started with Turso and Go in a few simple steps.
+
+In this Go quickstart we will learn how to:
+
+* Install the Turso package
+* Connect to a local or remote database
+* Execute a query using SQL
+* Sync changes to the cloud
+
+## Recommended: tursogo (Local + Cloud Sync)
+
+`tursogo` is the recommended package for running a local database, including synchronizing it to and from Turso Cloud. It is built on the Turso Database engine — a ground-up rewrite of SQLite with concurrent writes (MVCC) and async I/O. It implements the standard `database/sql` driver interface, so it works as a drop-in replacement for any Go SQLite driver. It ships prebuilt native libraries and uses [purego](https://github.com/ebitengine/purego) for FFI — no CGO required.
+
+<Steps>
+  <Step title="Install">
+    ```bash theme={null}
+    go get turso.tech/database/tursogo
+    ```
+  </Step>
+
+  <Step title="Connect">
+    ```go theme={null}
+    package main
+
+    import (
+        "database/sql"
+        "fmt"
+
+        _ "turso.tech/database/tursogo"
+    )
+
+    func main() {
+        db, _ := sql.Open("turso", "app.db")
+        defer db.Close()
+
+        db.Exec(`CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL
+        )`)
+
+        db.Exec("INSERT INTO users (name) VALUES (?)", "Alice")
+
+        rows, _ := db.Query("SELECT * FROM users")
+        defer rows.Close()
+        for rows.Next() {
+            var id int
+            var name string
+            rows.Scan(&id, &name)
+            fmt.Printf("User: %d %s\n", id, name)
+        }
+    }
+    ```
+  </Step>
+
+  <Step title="Sync (push and pull)">
+    If you need to sync your local database with Turso Cloud, use the sync driver:
+
+    ```go theme={null}
+    package main
+
+    import (
+        "context"
+        "os"
+
+        turso "turso.tech/database/tursogo"
+    )
+
+    func main() {
+        ctx := context.Background()
+
+        syncDb, _ := turso.NewTursoSyncDb(ctx, turso.TursoSyncDbConfig{
+            Path:      "app.db",
+            RemoteUrl: os.Getenv("TURSO_DATABASE_URL"),
+            AuthToken: os.Getenv("TURSO_AUTH_TOKEN"),
+        })
+
+        db, _ := syncDb.Connect(ctx)
+        defer db.Close()
+
+        db.ExecContext(ctx, "INSERT INTO users (name) VALUES (?)", "Bob")
+
+        // Push local writes to Turso Cloud
+        syncDb.Push(ctx)
+
+        // Pull remote changes from Turso Cloud
+        syncDb.Pull(ctx)
+    }
+    ```
+
+    All reads and writes happen against the local database file — fast, offline-capable. `Push()` sends your changes to the cloud. `Pull()` brings remote changes down. See the [reference](/sdk/go/reference) for checkpoint, stats, and encryption. See [Turso Sync](/sync/usage) for details on conflict resolution and more.
+
+    <Info>
+      You can test sync locally without a Turso Cloud account by starting a local sync server:
+
+      ```bash theme={null}
+      tursodb :memory: --sync-server 127.0.0.1:8080
+      ```
+
+      Then set `RemoteUrl` to `http://127.0.0.1:8080` (no `AuthToken` needed). See [Turso Database quickstart](/tursodb/quickstart) for how to install `tursodb`.
+    </Info>
+  </Step>
+</Steps>
+
+## Remote Access (Over-the-Wire)
+
+If your application needs to query a Turso Cloud database directly over the network (e.g., from a web server or serverless function), use the `libsql-client-go` package. It connects to your database via the libSQL wire protocol — no local file needed, pure Go.
+
+<Info>
+  For most applications, we recommend running a local database with sync (`NewTursoSyncDb`) instead — it gives you faster reads, offline support, and lower latency. Remote access is useful when you cannot store a local database file (e.g., stateless serverless environments).
+</Info>
+
+<Steps>
+  <Step title="Retrieve database credentials">
+    You will need an existing database to continue. If you don't have one, [create one](/quickstart).
+
+    <Snippet file="retrieve-database-credentials.mdx" />
+
+    <Info>You will want to store these as environment variables.</Info>
+  </Step>
+
+  <Step title="Install">
+    ```bash theme={null}
+    go get github.com/tursodatabase/libsql-client-go/libsql
+    ```
+  </Step>
+
+  <Step title="Connect and query">
+    ```go theme={null}
+    package main
+
+    import (
+        "database/sql"
+        "fmt"
+        "os"
+
+        _ "github.com/tursodatabase/libsql-client-go/libsql"
+    )
+
+    func main() {
+        url := os.Getenv("TURSO_DATABASE_URL") + "?authToken=" + os.Getenv("TURSO_AUTH_TOKEN")
+
+        db, _ := sql.Open("libsql", url)
+        defer db.Close()
+
+        rows, _ := db.Query("SELECT * FROM users")
+        defer rows.Close()
+        for rows.Next() {
+            var id int
+            var name string
+            rows.Scan(&id, &name)
+            fmt.Printf("User: %d %s\n", id, name)
+        }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Embedded Replicas (go-libsql)
+
+<Info>
+  Embedded Replicas give your Go app a local read copy of a Turso Cloud database. Reads are served locally; writes go to the cloud primary and are reflected back to the replica. Embedded Replicas are fully supported in production.
+
+  For new projects that need sync, we recommend `tursogo` with `NewTursoSyncDb`: both reads and writes are local, you sync explicitly with `Push()` / `Pull()`, and the wire format is logical change-data-capture rather than page frames ([benchmark](https://turso.tech/blog/sync-benchmark)).
+</Info>
+
+See the [reference](/sdk/go/reference) for full documentation on Embedded Replicas with `go-libsql`.
