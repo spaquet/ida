@@ -2,7 +2,7 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.4.4]
 
 - Added partial resolution: `render "name"`/`render partial: "name"` calls
   resolve to the `app/views/**/_name.*` file they render, following Rails'
