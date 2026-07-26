@@ -77,6 +77,13 @@ func Sync(root string) (result Result, err error) {
 	if err = resolve.All(tx, result.Generation); err != nil {
 		return result, err
 	}
+	// LSP enrichment only runs on a full sync, not on watch-triggered
+	// incremental refreshes: spawning/bootstrapping a language server on
+	// every keystroke-triggered file change would add multi-second latency
+	// to the interactive watch loop.
+	if err = resolve.Enrich(tx, root, result.Generation); err != nil {
+		return result, err
+	}
 	if _, err = tx.Exec("UPDATE projects SET generation = ?, state = 'complete', indexed_at = ?, error = '' WHERE id = 1", result.Generation, store.IndexedAt()); err != nil {
 		return result, err
 	}

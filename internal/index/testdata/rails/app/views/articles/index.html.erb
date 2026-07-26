@@ -1,1 +1,10 @@
-<h1>Articles</h1>
+<h1 class="text-primary">Articles</h1>
+
+<div data-controller="hello">
+  <button data-action="click->hello#greet">Greet</button>
+</div>
+
+<%= turbo_frame_tag "article_list" do %>
+<% end %>
+
+<%= react_component("Greeting") %>

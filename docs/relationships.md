@@ -12,6 +12,19 @@ roadmap.
 
 - `exact` means the fact is directly present in source syntax.
 - `convention` means one unique target follows a Rails naming convention.
+- `lsp` means an available LSP server (`ruby-lsp`, `typescript-language-server`)
+  resolved a `textDocument/definition` request to exactly one already-indexed
+  node, after deterministic resolution left the node unresolved. LSP
+  enrichment is additive and best-effort: a missing server, a failed
+  request, a timeout, or an ambiguous (zero/multiple-location) result never
+  produces an edge and never fails the index. It only runs on a full
+  `ida sync`, not on watch-triggered incremental refreshes, to keep the
+  interactive watch loop fast. Today it covers unresolved associations
+  (Ruby), and unresolved `js_import`/`jsx_use` (TypeScript). Resolving
+  Active Record association macros specifically also requires the Ruby LSP
+  Rails add-on with a booted application; plain `ruby-lsp` does not treat a
+  bareword symbol like `:comments` as pointing at a class, so without the
+  Rails add-on this enrichment safely no-ops rather than guessing.
 - If resolution has zero or multiple plausible targets, Ida omits the edge.
 
 Ambiguous-candidate reporting is planned but is not implemented yet.
@@ -112,6 +125,91 @@ matching classes leave the association unresolved.
 `validates`/`validate` declarations and `scope :name` declarations become
 `validation` and `scope` nodes on the enclosing class; they are not yet
 resolved to edges.
+
+## Stimulus
+
+JS/TS/JSX/TSX files are parsed with tree-sitter. A file under a `controllers/`
+directory named `*_controller.{js,ts}` whose default-exported class extends
+something named `Controller` becomes a `stimulus_controller` node. Its
+identifier follows Stimulus's own convention: underscores become dashes, and
+nested `controllers/` subdirectories join with `--`
+(`controllers/nested/date_picker_controller.js` -> `nested--date-picker`).
+
+Inside that class, `static targets/values/classes/outlets = [...]`/`{...}`
+become `stimulus_target`/`stimulus_value`/`stimulus_class`/`stimulus_outlet`
+nodes, and its methods become `method` nodes qualified as
+`<identifier>#<method>` (no distinction is made between lifecycle and action
+methods).
+
+Templates (ERB, HTML, JSX/TSX) are scanned by regex/line-scan, matching
+`extract.go`'s existing route/association style rather than a full
+ERB/HTML grammar, for `data-controller="a b"` and
+`data-action="click->identifier#method"` attributes, recorded as
+`stimulus_controller_use`/`stimulus_action_use` nodes.
+
+`stimulus_controller_use` resolves, when its identifier uniquely names one
+`stimulus_controller`, to a `stimulus_controller` edge at `convention`
+confidence. `stimulus_action_use` resolves the same way to a
+`stimulus_action` edge targeting the matching `method` node. Ambiguous
+identifiers (two controllers registering the same name) are omitted, not
+guessed.
+
+`data-*-target` attributes and Stimulus outlets/classes are recorded as
+declaration nodes but not yet resolved to template uses.
+
+## Turbo
+
+`broadcasts_to`, `broadcasts`, and the `broadcast_*_to`/`broadcast_refresh*`
+model macros become `turbo_broadcast` nodes on the enclosing class (same
+indentation-stack attribution as `association`/`scope`). `turbo_frame_tag
+"name"`/`<turbo-frame id="name">` and `turbo_stream_from "name"` become
+`turbo_frame`/`turbo_stream_from` nodes wherever they appear in a template.
+
+These are searchable nodes, not yet resolved to edges — pairing a frame or
+broadcast declaration to the specific navigation/stream response that
+targets it is heuristic across files and is deferred, the same way
+`validates`/`scope` are recorded without an edge today.
+
+## React
+
+Tree-sitter parses `.js`/`.jsx`/`.ts`/`.tsx` modules for `import` statements
+(`js_import`, qualified name = the raw specifier) and top-level
+function/class/const declarations (`js_export`), narrowed to `js_component`
+when the name is PascalCase and the body contains JSX, or `js_hook` when the
+name matches `use[A-Z]...`. A capitalized JSX tag anywhere in the file
+becomes a `jsx_use` node.
+
+- `js_import` with a relative specifier (`./x`, `../x`) resolves to a `file`
+  node by probing `.js/.jsx/.ts/.tsx` and `index.*` variants, the same way
+  Node module resolution would; bare/package specifiers (`"react"`) are left
+  unresolved. Edge kind `imports`.
+- `jsx_use` resolves to a `js_component`/`js_export` node with the matching
+  name, preferring one declared in the same file, then one reached through
+  an already-resolved `imports` edge from the same file. Edge kind
+  `jsx_renders`.
+- `react_component("Name")` Ruby/ERB helper calls become `react_mount` nodes,
+  resolved to a uniquely named `js_component`/`js_export` project-wide. Edge
+  kind `mounts`.
+
+All three omit the edge on zero or multiple candidates.
+
+## Tailwind CSS
+
+`tailwind.config.js`/`.ts` is parsed for `theme.extend.<category>.<name>`
+keys, e.g. `colors.primary`, becoming a `tailwind_token` node (qualified name
+`colors.primary`, name `primary`). Templates, JSX/TSX components, and
+authored CSS `@apply` rules (tree-sitter-css) are scanned for static
+`class="..."`/`className="..."`/`@apply ...` values, aggregated per file into
+a `class_attr_use` node — dynamically interpolated class expressions
+(`<%= %>`, `{...}`) are skipped rather than guessed at.
+
+A token resolves to a `tailwind_uses` edge, at `convention` confidence, for
+every file whose static class list contains a matching utility (an exact
+match, or a common Tailwind prefix like `bg-`/`text-`/`border-` joined to the
+token name). Unlike other resolvers this is not a unique-target match: a
+design token legitimately fans out to many files, and each edge is
+independently verified rather than chosen between competing candidates.
+Individual built-in utility classes never become their own nodes.
 
 ## Document mentions
 

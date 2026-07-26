@@ -28,6 +28,7 @@ var (
 	association = regexp.MustCompile(`^\s*(has_many|has_one|belongs_to|has_and_belongs_to_many)\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
 	validates   = regexp.MustCompile(`^\s*(validates?)\b(.*)$`)
 	scopeDecl   = regexp.MustCompile(`^\s*scope\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	broadcasts  = regexp.MustCompile(`^\s*(broadcasts_to|broadcasts_refreshes|broadcasts_refreshes_to|broadcasts|broadcast_append_to|broadcast_prepend_to|broadcast_replace_to|broadcast_remove_to|broadcast_refresh_to|broadcast_refresh_later_to)\b\s*(.*)$`)
 	firstSymbol = regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)
 
 	routeSingle    = regexp.MustCompile(`^\s*(get|post|put|patch|delete)\s+["']([^"']+)["'](?:\s*,?\s*(?:to:|=>)\s*["']([^"'#]+)#([^"']+)["'])`)
@@ -71,6 +72,7 @@ var singularActions = []resourceAction{
 func File(path string, content []byte) []Node {
 	nodes := []Node{node(path, "file", path, path, 1, lineCount(content), "file-v1")}
 	ext := strings.ToLower(filepath.Ext(path))
+	base := strings.ToLower(filepath.Base(path))
 	if ext == ".rb" {
 		nodes = append(nodes, ruby(path, content)...)
 	}
@@ -80,7 +82,31 @@ func File(path string, content []byte) []Node {
 	if ext == ".md" || ext == ".markdown" || ext == ".adoc" || ext == ".asciidoc" {
 		nodes = append(nodes, headings(path, content, ext)...)
 	}
+	isTailwindConfig := base == "tailwind.config.js" || base == "tailwind.config.ts"
+	if ext == ".js" || ext == ".jsx" || ext == ".ts" || ext == ".tsx" {
+		if isTailwindConfig {
+			nodes = append(nodes, tailwindConfig(path, content)...)
+		} else {
+			nodes = append(nodes, jsts(path, content)...)
+		}
+	}
+	if ext == ".css" || ext == ".scss" {
+		nodes = append(nodes, css(path, content)...)
+	}
+	if isTemplatePath(path, ext) {
+		nodes = append(nodes, template(path, content)...)
+	}
 	return nodes
+}
+
+// isTemplatePath reports whether a file should be scanned for Stimulus
+// attribute uses, Turbo helper calls, react_component mounts, and static
+// class/className attributes: ERB/HTML templates and JSX/TSX components.
+func isTemplatePath(path, ext string) bool {
+	if strings.HasSuffix(path, ".erb") || ext == ".html" || ext == ".htm" {
+		return true
+	}
+	return ext == ".jsx" || ext == ".tsx"
 }
 
 // routeFrame tracks the path and controller-module prefix contributed by
@@ -270,6 +296,11 @@ func ruby(path string, content []byte) []Node {
 		if match := scopeDecl.FindStringSubmatch(text); match != nil {
 			name := match[1]
 			nodes = append(nodes, node(path, "scope", name, owner+"#scope:"+name, line, line, "ruby-associations-v1"))
+			continue
+		}
+		if match := broadcasts.FindStringSubmatch(text); match != nil {
+			macro := match[1]
+			nodes = append(nodes, node(path, "turbo_broadcast", macro, owner+"#"+macro, line, line, "turbo-broadcasts-v1"))
 			continue
 		}
 		if match := validates.FindStringSubmatch(text); match != nil {
