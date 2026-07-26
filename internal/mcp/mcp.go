@@ -49,6 +49,9 @@ var tools = []tool{
 	{Name: "ida_path", Description: "Find a short directed relationship path.", InputSchema: object(map[string]any{"from": stringSchema(), "to": stringSchema(), "depth": integerSchema(1, 6)}, []string{"from", "to"})},
 	{Name: "ida_impact", Description: "Show bounded likely upstream and downstream effects.", InputSchema: object(map[string]any{"name": stringSchema(), "depth": integerSchema(1, 4), "limit": integerSchema(1, 100)}, []string{"name"})},
 	{Name: "ida_refresh", Description: "Refresh changed paths or reconcile the full index.", InputSchema: object(map[string]any{"paths": map[string]any{"type": "array", "items": stringSchema(), "maxItems": 1000}}, nil)},
+	{Name: "ida_unused", Description: "List partials or view components with no resolved render edge.", InputSchema: object(map[string]any{"kind": stringSchema()}, []string{"kind"})},
+	{Name: "ida_duplicates", Description: "List method or Stimulus controller declarations sharing one qualified name.", InputSchema: object(map[string]any{"kind": stringSchema()}, []string{"kind"})},
+	{Name: "ida_env", Description: "List ENV variable reads, grouped by name.", InputSchema: object(nil, nil)},
 }
 
 func Serve(parent context.Context, root string, input io.Reader, output, diagnostics io.Writer) error {
@@ -277,6 +280,33 @@ func callTool(root string, db *store.DB, name string, arguments json.RawMessage)
 			input.Limit = 50
 		}
 		return query.Impact(db, input.Name, input.Depth, input.Limit)
+	case "ida_unused":
+		var input struct {
+			Kind string `json:"kind"`
+		}
+		if err := decode(arguments, &input); err != nil {
+			return nil, err
+		}
+		if err := validateString(input.Kind); err != nil {
+			return nil, err
+		}
+		return query.Unused(db, input.Kind)
+	case "ida_duplicates":
+		var input struct {
+			Kind string `json:"kind"`
+		}
+		if err := decode(arguments, &input); err != nil {
+			return nil, err
+		}
+		if err := validateString(input.Kind); err != nil {
+			return nil, err
+		}
+		return query.Duplicates(db, input.Kind)
+	case "ida_env":
+		if err := decode(arguments, &struct{}{}); err != nil {
+			return nil, err
+		}
+		return query.EnvVars(db)
 	default:
 		return nil, errors.New("unknown tool")
 	}

@@ -12,7 +12,7 @@ func TestRubyDeclarations(t *testing.T) {
 	for _, node := range nodes {
 		got[node.QualifiedName] = true
 	}
-	for _, want := range []string{"Admin", "User", "active?"} {
+	for _, want := range []string{"Admin", "User", "User#active?"} {
 		if !got[want] {
 			t.Errorf("missing %q in %#v", want, nodes)
 		}
@@ -72,6 +72,115 @@ end
 	got := nodeByKind(nodes, "turbo_broadcast")
 	if len(got) != 1 || got[0].QualifiedName != "Article#broadcasts_to" {
 		t.Fatalf("turbo_broadcast = %#v; want Article#broadcasts_to", got)
+	}
+}
+
+func TestPartialFileTagged(t *testing.T) {
+	nodes := File("app/views/articles/_form.html.erb", []byte("<div></div>\n"))
+	partials := nodeByKind(nodes, "partial")
+	if len(partials) != 1 || partials[0].Name != "form" || partials[0].QualifiedName != "articles/form" {
+		t.Fatalf("partial = %#v; want articles/form", partials)
+	}
+}
+
+func TestRubyRenderCallsExplicitOnly(t *testing.T) {
+	content := []byte(`class ArticlesController < ApplicationController
+  def show
+    render partial: "form"
+    render "not_a_partial_in_a_controller"
+    render SubmitButtonComponent.new
+  end
+end
+`)
+	nodes := File("app/controllers/articles_controller.rb", content)
+	partials := nodeByKind(nodes, "partial_use")
+	if len(partials) != 1 || partials[0].Name != "form" {
+		t.Fatalf("partial_use = %#v; want only the explicit partial: form call", partials)
+	}
+	components := nodeByKind(nodes, "view_component_use")
+	if len(components) != 1 || components[0].Name != "SubmitButtonComponent" {
+		t.Fatalf("view_component_use = %#v; want SubmitButtonComponent", components)
+	}
+}
+
+func TestViewComponentClassTagged(t *testing.T) {
+	content := []byte(`class SubmitButtonComponent < ViewComponent::Base
+  def initialize(label:)
+    @label = label
+  end
+end
+`)
+	nodes := File("app/components/submit_button_component.rb", content)
+	got := nodeByKind(nodes, "view_component")
+	if len(got) != 1 || got[0].QualifiedName != "SubmitButtonComponent" {
+		t.Fatalf("view_component = %#v; want SubmitButtonComponent", got)
+	}
+}
+
+func TestMethodCallUses(t *testing.T) {
+	content := []byte(`class ArticlesController < ApplicationController
+  def create
+    NotifyUserService.call(current_user)
+    ExportService.new(current_user).perform
+    ExportService.new
+    other_helper.foo
+  end
+end
+`)
+	nodes := File("app/controllers/articles_controller.rb", content)
+	calls := nodeByKind(nodes, "method_call_use")
+	got := make(map[string]bool)
+	for _, c := range calls {
+		got[c.QualifiedName] = true
+	}
+	for _, want := range []string{"NotifyUserService#call", "ExportService#perform"} {
+		if !got[want] {
+			t.Errorf("missing %q in %#v", want, calls)
+		}
+	}
+	if got["ExportService#new"] {
+		t.Errorf("bare .new should not itself become a method_call_use: %#v", calls)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("method_call_use = %#v; want exactly 2 (call, perform)", calls)
+	}
+}
+
+func TestEnvVarUsesRubyAndYAML(t *testing.T) {
+	rubyContent := []byte(`class Client
+  def initialize
+    @key = ENV["API_KEY"]
+    @secret = ENV.fetch("API_SECRET", nil)
+    # @old_key = ENV["UNUSED_KEY"]
+  end
+end
+`)
+	nodes := File("app/models/client.rb", rubyContent)
+	got := make(map[string]bool)
+	for _, n := range nodeByKind(nodes, "env_var_use") {
+		got[n.Name] = true
+	}
+	if !got["API_KEY"] || !got["API_SECRET"] {
+		t.Fatalf("env_var_use = %#v; want API_KEY and API_SECRET", got)
+	}
+	if got["UNUSED_KEY"] {
+		t.Fatalf("env_var_use should not extract from a commented-out line: %#v", got)
+	}
+
+	yamlContent := []byte(`production:
+  host: <%= ENV["DB_HOST"] %>
+  # password: <%= ENV["DB_PASSWORD"] %>
+`)
+	yamlNodes := File("config/database.yml", yamlContent)
+	ygot := make(map[string]bool)
+	for _, n := range nodeByKind(yamlNodes, "env_var_use") {
+		ygot[n.Name] = true
+	}
+	if !ygot["DB_HOST"] {
+		t.Fatalf("env_var_use = %#v; want DB_HOST", ygot)
+	}
+	if ygot["DB_PASSWORD"] {
+		t.Fatalf("env_var_use should not extract from a commented-out YAML line: %#v", ygot)
 	}
 }
 

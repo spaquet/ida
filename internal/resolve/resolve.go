@@ -34,6 +34,15 @@ func All(tx *sql.Tx, generation int64) error {
 	if err := resolveReactMounts(tx, generation); err != nil {
 		return err
 	}
+	if err := resolvePartials(tx, generation); err != nil {
+		return err
+	}
+	if err := resolveViewComponents(tx, generation); err != nil {
+		return err
+	}
+	if err := resolveCalls(tx, generation); err != nil {
+		return err
+	}
 	return resolveTailwind(tx, generation)
 }
 
@@ -610,6 +619,193 @@ func resolveReactMounts(tx *sql.Tx, generation int64) error {
 		}
 	}
 	return nil
+}
+
+// resolvePartials links a `render "name"` / `render partial: "name"` use to
+// the partial file it names, following Rails' own lookup convention: a name
+// containing a "/" is rooted at app/views/, otherwise it is looked up next
+// to the referencing template.
+func resolvePartials(tx *sql.Tx, generation int64) error {
+	rows, err := tx.Query(`
+SELECT n.id, n.qualified_name, n.file_id, n.start_line, f.path
+FROM nodes n JOIN files f ON f.id = n.file_id
+WHERE n.kind = 'partial_use'`)
+	if err != nil {
+		return err
+	}
+	type useRow struct {
+		id, value, fromPath string
+		fileID              int64
+		line                int
+	}
+	var items []useRow
+	for rows.Next() {
+		var item useRow
+		if err := rows.Scan(&item.id, &item.value, &item.fileID, &item.line, &item.fromPath); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, item := range items {
+		prefix, ok := partialFilePrefix(item.value, item.fromPath)
+		if !ok {
+			continue
+		}
+		targetID, count, err := uniquePartial(tx, prefix)
+		if err != nil || count != 1 {
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		if err := insertEdge(tx, item.id, targetID, "renders_partial", "convention", item.fileID, item.line, item.value, generation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// partialFilePrefix returns the app/views-relative file-name prefix (with a
+// trailing "." so the format/handler suffix can vary) that a partial render
+// name resolves to, given the path of the file doing the rendering.
+func partialFilePrefix(value, fromPath string) (string, bool) {
+	if strings.Contains(value, "/") {
+		dir, name := path.Split(value)
+		dir = strings.TrimSuffix(dir, "/")
+		if dir == "" {
+			return "app/views/_" + name + ".", true
+		}
+		return "app/views/" + dir + "/_" + name + ".", true
+	}
+	idx := strings.Index(fromPath, "app/views/")
+	if idx == -1 {
+		return "", false
+	}
+	return path.Dir(fromPath) + "/_" + value + ".", true
+}
+
+func uniquePartial(tx *sql.Tx, prefix string) (string, int, error) {
+	rows, err := tx.Query(`
+SELECT n.id FROM nodes n JOIN files f ON f.id = n.file_id
+WHERE n.kind = 'partial' AND f.path LIKE ? ESCAPE '\' LIMIT 2`, escapeLike(prefix)+"%")
+	if err != nil {
+		return "", 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var id string
+	count := 0
+	for rows.Next() {
+		if err := rows.Scan(&id); err != nil {
+			return "", 0, err
+		}
+		count++
+	}
+	return id, count, rows.Err()
+}
+
+// resolveViewComponents links a `render FooComponent.new(...)` use to the
+// uniquely, conventionally named ViewComponent class it renders, the same
+// unqualified-name matching resolveAssociations uses for classes.
+func resolveViewComponents(tx *sql.Tx, generation int64) error {
+	uses, err := sourceRows(tx, "view_component_use")
+	if err != nil {
+		return err
+	}
+	for _, use := range uses {
+		targetID, count, err := uniqueNodeByName(tx, "view_component", lastPart(use.value))
+		if err != nil || count != 1 {
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		if err := insertEdge(tx, use.id, targetID, "renders_component", "convention", use.fileID, use.line, use.value, generation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func lastPart(name string) string {
+	parts := strings.Split(name, "::")
+	return parts[len(parts)-1]
+}
+
+// resolveCalls links a `Receiver.method(...)`/`Receiver.new(...).method(...)`
+// use to the method it names, when Receiver uniquely names one project class
+// (by its unqualified name, the same matching resolveAssociations uses) and
+// that class's file declares exactly one method with the matching name.
+// Calls to Rails/gem classes that never became a class node, or to a method
+// name declared in more than one place in the receiver's own file, are left
+// unresolved rather than guessed.
+func resolveCalls(tx *sql.Tx, generation int64) error {
+	uses, err := sourceRows(tx, "method_call_use")
+	if err != nil {
+		return err
+	}
+	for _, use := range uses {
+		receiver, method, ok := strings.Cut(use.value, "#")
+		if !ok {
+			continue
+		}
+		_, classFileID, count, err := uniqueClassNode(tx, lastPart(receiver))
+		if err != nil {
+			return err
+		}
+		if count != 1 {
+			continue
+		}
+		methodID, count, err := uniqueMethodInFile(tx, classFileID, method)
+		if err != nil {
+			return err
+		}
+		if count != 1 {
+			continue
+		}
+		if err := insertEdge(tx, use.id, methodID, "calls", "convention", use.fileID, use.line, use.value, generation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func uniqueClassNode(tx *sql.Tx, name string) (string, int64, int, error) {
+	rows, err := tx.Query(`SELECT id, file_id FROM nodes WHERE kind = 'class' AND name = ? LIMIT 2`, name)
+	if err != nil {
+		return "", 0, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var id string
+	var fileID int64
+	count := 0
+	for rows.Next() {
+		if err := rows.Scan(&id, &fileID); err != nil {
+			return "", 0, 0, err
+		}
+		count++
+	}
+	return id, fileID, count, rows.Err()
+}
+
+func uniqueMethodInFile(tx *sql.Tx, fileID int64, name string) (string, int, error) {
+	rows, err := tx.Query(`SELECT id FROM nodes WHERE kind = 'method' AND file_id = ? AND name = ? LIMIT 2`, fileID, name)
+	if err != nil {
+		return "", 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var id string
+	count := 0
+	for rows.Next() {
+		if err := rows.Scan(&id); err != nil {
+			return "", 0, err
+		}
+		count++
+	}
+	return id, count, rows.Err()
 }
 
 // tailwindUtilitySuffixes are the Tailwind class-name segments a custom

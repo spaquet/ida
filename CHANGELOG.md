@@ -2,6 +2,37 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.4]
+
+- Added partial resolution: `render "name"`/`render partial: "name"` calls
+  resolve to the `app/views/**/_name.*` file they render, following Rails'
+  own same-directory/`app/views`-rooted lookup convention, as a
+  `renders_partial` edge.
+- Added ViewComponent resolution: `render FooComponent.new(...)` resolves to
+  the matching `class Foo < ViewComponent::Base` declaration as a
+  `renders_component` edge.
+- Added `ida unused partial` / `ida unused view_component` (MCP tool
+  `ida_unused`) to list partials/components with no resolved incoming
+  render edge.
+- Added one-hop Ruby class-method call resolution: `Receiver.method(...)`
+  and `Receiver.new(...).method(...)` calls resolve to a `calls` edge when
+  `Receiver` uniquely names a project class and its file declares exactly
+  one method with that name, letting `ida impact`/`ida node` on a
+  service/method surface which controllers (or anything else) call it.
+- Ruby method nodes are now qualified by their owning class/module (e.g.
+  `NotifyService#call`), matching the shape Stimulus controller methods
+  already used. Added `ida duplicates method` / `ida duplicates
+  stimulus_controller` (MCP tool `ida_duplicates`) to list declarations
+  sharing one qualified name — the concrete risk that Ruby's own
+  "last definition loaded wins" semantics create — marking a group
+  `expected: true` when every location is a `config/environments/*.rb` or
+  `config/locales/*.rb` file, since those are never loaded together.
+- Added ENV variable tracking: `ENV["NAME"]`/`ENV.fetch("NAME", ...)` reads
+  (Ruby and YAML, since Rails renders YAML config through ERB) become an
+  `env_var_use` node, skipping commented-out lines. `ida env` (MCP tool
+  `ida_env`) lists every variable found, with every read site, categorized
+  as database/initializer/environment/config/app by its path.
+
 ## [0.4.2]
 
 - Fixed a crash (`UNIQUE constraint failed: nodes.id`) where a `validates`

@@ -23,14 +23,15 @@ type Node struct {
 }
 
 var (
-	rubyType    = regexp.MustCompile(`^\s*(class|module)\s+([A-Z][A-Za-z0-9_:]*)`)
-	rubyMethod  = regexp.MustCompile(`^\s*def\s+(self\.)?([A-Za-z_][A-Za-z0-9_!?=]*)`)
-	association = regexp.MustCompile(`^\s*(has_many|has_one|belongs_to|has_and_belongs_to_many)\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
-	validates   = regexp.MustCompile(`^\s*(validates?)\b(.*)$`)
-	scopeDecl   = regexp.MustCompile(`^\s*scope\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
-	broadcasts  = regexp.MustCompile(`^\s*(broadcasts_to|broadcasts_refreshes|broadcasts_refreshes_to|broadcasts|broadcast_append_to|broadcast_prepend_to|broadcast_replace_to|broadcast_remove_to|broadcast_refresh_to|broadcast_refresh_later_to)\b\s*(.*)$`)
-	firstSymbol = regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)
-	keywordArg  = regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*:\s`)
+	rubyType           = regexp.MustCompile(`^\s*(class|module)\s+([A-Z][A-Za-z0-9_:]*)`)
+	viewComponentClass = regexp.MustCompile(`^\s*class\s+[A-Z][A-Za-z0-9_:]*\s*<\s*(?:::)?(?:ViewComponent::Base|ApplicationComponent)\b`)
+	rubyMethod         = regexp.MustCompile(`^\s*def\s+(self\.)?([A-Za-z_][A-Za-z0-9_!?=]*)`)
+	association        = regexp.MustCompile(`^\s*(has_many|has_one|belongs_to|has_and_belongs_to_many)\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	validates          = regexp.MustCompile(`^\s*(validates?)\b(.*)$`)
+	scopeDecl          = regexp.MustCompile(`^\s*scope\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	broadcasts         = regexp.MustCompile(`^\s*(broadcasts_to|broadcasts_refreshes|broadcasts_refreshes_to|broadcasts|broadcast_append_to|broadcast_prepend_to|broadcast_replace_to|broadcast_remove_to|broadcast_refresh_to|broadcast_refresh_later_to)\b\s*(.*)$`)
+	firstSymbol        = regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	keywordArg         = regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*:\s`)
 
 	routeSingle    = regexp.MustCompile(`^\s*(get|post|put|patch|delete)\s+["']([^"']+)["'](?:\s*,?\s*(?:to:|=>)\s*["']([^"'#]+)#([^"']+)["'])`)
 	routeRoot      = regexp.MustCompile(`^\s*root\s+(?:to:\s*)?["']([^"'#]+)#([^"']+)["']`)
@@ -43,7 +44,68 @@ var (
 
 	heading  = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
 	adocHead = regexp.MustCompile(`^(={1,6})\s+(.+?)\s*$`)
+
+	classCallDirect = regexp.MustCompile(`\b((?:[A-Z][A-Za-z0-9_]*::)*[A-Z][A-Za-z0-9_]*)\.([a-z_][A-Za-z0-9_]*[!?]?)\b`)
+	classCallViaNew = regexp.MustCompile(`\b((?:[A-Z][A-Za-z0-9_]*::)*[A-Z][A-Za-z0-9_]*)\.new\b(?:\([^)]*\))?\s*\.\s*([a-z_][A-Za-z0-9_]*[!?]?)\b`)
+
+	envVarUse = regexp.MustCompile(`\bENV(?:\[\s*["']([A-Za-z_][A-Za-z0-9_]*)["']\s*\]|\.fetch\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["'])`)
 )
+
+// envVarUses scans one line for ENV["NAME"]/ENV['NAME']/ENV.fetch("NAME", ...)
+// reads. Callers are responsible for not calling it on a fully commented-out
+// line; it does not itself try to strip trailing inline comments, since a
+// "#" can legitimately appear inside a quoted string.
+func envVarUses(path, text string, line int) []Node {
+	var nodes []Node
+	for _, m := range envVarUse.FindAllStringSubmatch(text, -1) {
+		name := m[1]
+		if name == "" {
+			name = m[2]
+		}
+		nodes = append(nodes, node(path, "env_var_use", name, name, line, line, "env-vars-v1"))
+	}
+	return nodes
+}
+
+// yamlFile scans a YAML file (config/database.yml and friends, which Rails
+// always renders through ERB regardless of extension) for ENV reads,
+// skipping full-line "#" comments.
+func yamlFile(path string, content []byte) []Node {
+	var nodes []Node
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for line := 1; scanner.Scan(); line++ {
+		text := scanner.Text()
+		if strings.HasPrefix(strings.TrimSpace(text), "#") {
+			continue
+		}
+		nodes = append(nodes, envVarUses(path, text, line)...)
+	}
+	return nodes
+}
+
+// methodCallUses scans one line of Ruby for `Receiver.method(...)` and
+// `Receiver.new(...).method(...)` calls on a constant-named receiver,
+// recorded as a method_call_use node regardless of whether Receiver turns
+// out to be a project class, a Rails/gem class, or a false positive from a
+// bare `Constant.method` reference — resolution narrows it down later.
+// `.new` alone is skipped: it names no behavior of its own, only the chained
+// call after it (or a bare Receiver.method elsewhere) is meaningful.
+func methodCallUses(path, text string, line int) []Node {
+	var nodes []Node
+	for _, m := range classCallViaNew.FindAllStringSubmatch(text, -1) {
+		qualified := m[1] + "#" + m[2]
+		nodes = append(nodes, node(path, "method_call_use", m[2], qualified, line, line, "method-calls-v1"))
+	}
+	for _, m := range classCallDirect.FindAllStringSubmatch(text, -1) {
+		if m[2] == "new" {
+			continue
+		}
+		qualified := m[1] + "#" + m[2]
+		nodes = append(nodes, node(path, "method_call_use", m[2], qualified, line, line, "method-calls-v1"))
+	}
+	return nodes
+}
 
 type resourceAction struct {
 	name       string
@@ -94,10 +156,42 @@ func File(path string, content []byte) []Node {
 	if ext == ".css" || ext == ".scss" {
 		nodes = append(nodes, css(path, content)...)
 	}
+	if ext == ".yml" || ext == ".yaml" {
+		nodes = append(nodes, yamlFile(path, content)...)
+	}
 	if isTemplatePath(path, ext) {
 		nodes = append(nodes, template(path, content)...)
 	}
+	if dir, name, ok := partialName(path); ok {
+		qualified := name
+		if dir != "" {
+			qualified = dir + "/" + name
+		}
+		nodes = append(nodes, node(path, "partial", name, qualified, 1, lineCount(content), "partials-v1"))
+	}
 	return nodes
+}
+
+// partialName reports the conventional lookup name of a Rails partial file
+// such as app/views/articles/_form.html.erb: dir "articles", name "form".
+func partialName(path string) (dir, name string, ok bool) {
+	idx := strings.Index(path, "app/views/")
+	if idx == -1 {
+		return "", "", false
+	}
+	rel := path[idx+len("app/views/"):]
+	d, base := filepath.Split(rel)
+	if !strings.HasPrefix(base, "_") {
+		return "", "", false
+	}
+	base = strings.TrimPrefix(base, "_")
+	if i := strings.Index(base, "."); i >= 0 {
+		base = base[:i]
+	}
+	if base == "" {
+		return "", "", false
+	}
+	return strings.TrimSuffix(d, "/"), base, true
 }
 
 // isTemplatePath reports whether a file should be scanned for Stimulus
@@ -283,6 +377,12 @@ func ruby(path string, content []byte) []Node {
 		trimmed := strings.TrimSpace(text)
 		indent := len(text) - len(strings.TrimLeft(text, " \t"))
 
+		nodes = append(nodes, renderUses(path, text, line, false)...)
+		nodes = append(nodes, methodCallUses(path, text, line)...)
+		if !strings.HasPrefix(trimmed, "#") {
+			nodes = append(nodes, envVarUses(path, text, line)...)
+		}
+
 		if trimmed == "end" {
 			if len(stack) > 0 && indent <= stack[len(stack)-1].indent {
 				stack = stack[:len(stack)-1]
@@ -293,18 +393,25 @@ func ruby(path string, content []byte) []Node {
 			name := match[2]
 			nodes = append(nodes, node(path, match[1], lastPart(name), name, line, line, "ruby-declarations-v1"))
 			stack = append(stack, classFrame{indent: indent, name: lastPart(name), isClass: match[1] == "class"})
+			if vc := viewComponentClass.FindStringSubmatch(text); vc != nil {
+				nodes = append(nodes, node(path, "view_component", lastPart(name), name, line, line, "view-components-v1"))
+			}
 			continue
 		}
+		owner := classOwner(stack)
 		if match := rubyMethod.FindStringSubmatch(text); match != nil {
 			name := match[2]
-			qualified := name
+			suffix := name
 			if match[1] != "" {
-				qualified = "self." + name
+				suffix = "self." + name
+			}
+			qualified := suffix
+			if owner != "" {
+				qualified = owner + "#" + suffix
 			}
 			nodes = append(nodes, node(path, "method", name, qualified, line, line, "ruby-declarations-v1"))
 			continue
 		}
-		owner := classOwner(stack)
 		if owner == "" {
 			continue
 		}

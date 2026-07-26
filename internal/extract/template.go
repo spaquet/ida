@@ -15,6 +15,10 @@ var (
 	turboStreamFrom    = regexp.MustCompile(`turbo_stream_from\s*\(?\s*["']([^"']+)["']`)
 	reactComponentCall = regexp.MustCompile(`react_component\s*\(?\s*["']([^"']+)["']`)
 	classAttr          = regexp.MustCompile(`\b(?:class|className)\s*=\s*["']([^"'{}<%]*)["']`)
+
+	renderPartialExplicit = regexp.MustCompile(`\brender\b\s*\(?\s*partial:\s*["']([a-zA-Z0-9_/.-]+)["']`)
+	renderPartialBare     = regexp.MustCompile(`\brender\b\s*\(?\s*["']([a-zA-Z0-9_/.-]+)["']`)
+	renderComponentUse    = regexp.MustCompile(`\brender\b\s*\(?\s*((?:::)?(?:[A-Z][A-Za-z0-9_]*::)*[A-Z][A-Za-z0-9_]*Component)(?:\.with_collection)?\.new\b`)
 )
 
 // template extracts Stimulus attribute uses, Turbo frame/stream helper
@@ -59,6 +63,10 @@ func template(path string, content []byte) []Node {
 		for _, m := range reactComponentCall.FindAllStringSubmatch(text, -1) {
 			nodes = append(nodes, node(path, "react_mount", m[1], m[1], line, line, "react-mounts-v1"))
 		}
+		nodes = append(nodes, renderUses(path, text, line, true)...)
+		if !strings.HasPrefix(strings.TrimSpace(text), "<%#") {
+			nodes = append(nodes, envVarUses(path, text, line)...)
+		}
 		for _, m := range classAttr.FindAllStringSubmatch(text, -1) {
 			fields := strings.Fields(m[1])
 			if len(fields) == 0 {
@@ -74,6 +82,28 @@ func template(path string, content []byte) []Node {
 	if len(classTokens) > 0 {
 		blob := strings.Join(dedupe(classTokens), " ")
 		nodes = append(nodes, node(path, "class_attr_use", blob, blob, classLine, classLine, "class-attrs-v1"))
+	}
+	return nodes
+}
+
+// renderUses scans one line for `render` calls naming a partial or a
+// ViewComponent. includeBare enables the bare-string partial shorthand
+// (`render "form"`), which only means "render a partial" inside a view
+// template; in a controller/helper the same shorthand renders a full
+// template, so callers pass includeBare=false there and rely on the
+// unambiguous `partial:` keyword form instead.
+func renderUses(path, text string, line int, includeBare bool) []Node {
+	var nodes []Node
+	for _, m := range renderPartialExplicit.FindAllStringSubmatch(text, -1) {
+		nodes = append(nodes, node(path, "partial_use", m[1], m[1], line, line, "partials-v1"))
+	}
+	if includeBare {
+		for _, m := range renderPartialBare.FindAllStringSubmatch(text, -1) {
+			nodes = append(nodes, node(path, "partial_use", m[1], m[1], line, line, "partials-v1"))
+		}
+	}
+	for _, m := range renderComponentUse.FindAllStringSubmatch(text, -1) {
+		nodes = append(nodes, node(path, "view_component_use", m[1], m[1], line, line, "view-components-v1"))
 	}
 	return nodes
 }

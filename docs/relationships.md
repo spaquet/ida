@@ -99,9 +99,53 @@ app/views/articles/index.html.erb
 ```
 
 Multiple matching formats, variants, or templates are intentionally left
-unresolved rather than selecting one. Explicit `render` calls, layouts,
-partials, redirects, Turbo Stream selection, and component rendering are
-planned but not implemented.
+unresolved rather than selecting one. Layouts, redirects, and Turbo Stream
+selection are still planned but not implemented.
+
+## Partials
+
+Any file under `app/views/` whose basename starts with `_` becomes a
+`partial` node, e.g. `app/views/articles/_form.html.erb` -> qualified name
+`articles/form`.
+
+`render "name"` and `render partial: "name"` calls in ERB/HTML templates,
+and `render partial: "name"` calls in Ruby files (controllers, helpers),
+become a `partial_use` node. The bare `render "name"` shorthand is only
+scanned in templates, since the identical syntax in a controller/helper
+renders a full template rather than a partial.
+
+Ida then applies Rails' own lookup convention: a name containing a `/` is
+rooted at `app/views/` (`"shared/flash"` -> `app/views/shared/_flash.*`);
+otherwise it is looked up next to the referencing template (`"form"` from
+`app/views/articles/index.html.erb` -> `app/views/articles/_form.*`). It adds
+a `renders_partial` edge only when exactly one indexed partial matches.
+
+Object-based shorthand (`render @article`, `render @comments`) and
+dynamically computed partial names are not resolved, since they require
+type information Ida does not track.
+
+## ViewComponent
+
+A class declared as `class Foo < ViewComponent::Base` (or
+`< ApplicationComponent`) becomes a `view_component` node, in addition to
+the `class` node every Ruby class declaration already produces.
+
+`render FooComponent.new(...)` — including the `.with_collection.new`
+collection form — becomes a `view_component_use` node wherever it appears
+(Ruby or template), resolved by unqualified class name the same way
+`has_many`/`belongs_to` associations resolve to their target class. A
+`renders_component` edge is added only when exactly one `view_component`
+matches.
+
+## Finding unused partials and components
+
+`ida unused partial` and `ida unused view_component` (MCP tool
+`ida_unused`, argument `kind`) list every `partial`/`view_component` node
+with no incoming `renders_partial`/`renders_component` edge. Because
+object-based `render @model` and dynamically computed render targets are
+never resolved, a partial or component rendered only that way will appear
+here even though it is actually used — treat the result as a lead to check,
+not a guaranteed-dead-code list.
 
 ## Associations
 
@@ -210,6 +254,84 @@ token name). Unlike other resolvers this is not a unique-target match: a
 design token legitimately fans out to many files, and each edge is
 independently verified rather than chosen between competing candidates.
 Individual built-in utility classes never become their own nodes.
+
+## Ruby class-method calls
+
+Any `Receiver.method(...)` or `Receiver.new(...).method(...)` call in a `.rb`
+file, where `Receiver` is a capitalized (optionally namespaced) constant,
+becomes a `method_call_use` node — regardless of whether `Receiver` turns out
+to be a project class, a Rails/gem class, or a false positive from an
+unrelated `Constant.method` reference; resolution narrows it down. Bare
+`Receiver.new` alone is not recorded: it names no behavior of its own, only
+the chained call after it (or a separate `Receiver.method` elsewhere) is.
+
+It resolves to a `calls` edge, at `convention` confidence, only when
+`Receiver`'s unqualified name (the same matching `has_many`/`belongs_to`
+associations use) names exactly one project class, and that class's own file
+declares exactly one method with the called name — no distinction is made
+between an instance method and a `self.`-qualified class method, so a
+service object exposing both `self.call` and an instance `call` (the common
+`Foo.call` → `new(...).call` delegation pattern) makes that name ambiguous
+and the edge is omitted.
+
+This is not a full Ruby call graph: it is one hop, convention-resolved, and
+only from a capitalized constant receiver. A local variable or instance
+`@service.call`, method calls chained more than one level deep, and calls
+inside interpolated strings or comments are not tracked. Use `ida search
+<ServiceName>` for a broader text match, and `ida impact <ServiceName>`/
+`ida impact <method>` to see whatever `calls` edges did resolve.
+
+## Duplicate declarations
+
+Ruby method nodes are qualified by their owner (the nearest enclosing class,
+by the same indentation-stack attribution associations/scopes use), e.g.
+`NotifyService#call` or `NotifyService#self.call` for a class method — a
+class method and an instance method of the same name are never considered
+duplicates of each other, since Ruby dispatches them differently. Stimulus
+controller/action methods extracted from JS already use this
+`<identifier>#<method>` shape (see [Stimulus](#stimulus)).
+
+`ida duplicates method` and `ida duplicates stimulus_controller` (MCP tool
+`ida_duplicates`, argument `kind`) list every qualified name shared by more
+than one declaration, in the same file or across different files (a
+reopened class, a monkey-patched module, or a second Stimulus controller
+file registering the same identifier). This is the concrete risk Ruby's own
+load semantics create: when the same method name is declared twice under
+the same owner, the last one loaded silently wins and the earlier
+definition is simply never called — Rails' autoloader normally prevents
+this for a single top-level class per file, but a reopened class/module, a
+monkey patch, or a `def` inside a `config/environments/*.rb`/
+`config/locales/*.rb` block can still collide.
+
+Because `config/environments/*.rb` and `config/locales/*.rb` are Rails'
+own per-environment/per-locale files — never loaded together, so a
+"duplicate" there changes nothing at runtime — every group is also
+marked `expected: true` when every one of its locations falls under those
+two directories, so real cross-class collisions stand out from routine,
+harmless overlap.
+
+Duplicate detection does not compare view templates: ERB partials have no
+stable owner boundary (no enclosing class) to scope a name to, and detecting
+near-identical *code*, as opposed to an identical declared name, would need
+a structural-similarity pass this tool does not attempt.
+
+## Environment variables
+
+`ENV["NAME"]`/`ENV['NAME']`/`ENV.fetch("NAME", ...)` reads become an
+`env_var_use` node wherever they appear — Ruby files, and YAML files (Rails
+renders `config/database.yml` and friends through ERB regardless of
+extension, so YAML is scanned too). A fully commented-out line (`#...` in
+Ruby/YAML, `<%#...%>` in ERB) is skipped; an inline trailing comment on an
+otherwise-live line is not specially handled, since a `#` can legitimately
+appear inside a quoted string.
+
+`ida env` (MCP tool `ida_env`) lists every variable name found, each with
+every file/line that reads it, tagged with a conventional category derived
+from its path: `database` for `config/database.yml`, `initializer` for
+`config/initializers/**`, `environment` for `config/environments/**`,
+`config` for anything else under `config/`, and `app` for everything else.
+A variable that is only ever *set*, or read through a settings-gem wrapper
+rather than `ENV` directly, will not appear.
 
 ## Document mentions
 
