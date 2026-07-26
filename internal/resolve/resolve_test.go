@@ -217,6 +217,72 @@ func TestResolveReactMountsAmbiguousOmitted(t *testing.T) {
 	}
 }
 
+func TestResolvePartialsSameDirAndAbsolute(t *testing.T) {
+	db := open(t)
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexFile := insertFile(t, tx, "app/views/articles/index.html.erb")
+	formFile := insertFile(t, tx, "app/views/articles/_form.html.erb")
+	flashFile := insertFile(t, tx, "app/views/shared/_flash.html.erb")
+	unusedFile := insertFile(t, tx, "app/views/articles/_sidebar.html.erb")
+	insertNode(t, tx, "form", formFile, "partial", "form", "articles/form", 1)
+	insertNode(t, tx, "flash", flashFile, "partial", "flash", "shared/flash", 1)
+	insertNode(t, tx, "sidebar", unusedFile, "partial", "sidebar", "articles/sidebar", 1)
+	insertNode(t, tx, "use1", indexFile, "partial_use", "form", "form", 1)
+	insertNode(t, tx, "use2", indexFile, "partial_use", "shared/flash", "shared/flash", 2)
+	if err := resolve.All(tx, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.Query(`SELECT source_id, target_id FROM edges WHERE kind = 'renders_partial'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = rows.Close() }()
+	got := map[string]string{}
+	for rows.Next() {
+		var s, tg string
+		if err := rows.Scan(&s, &tg); err != nil {
+			t.Fatal(err)
+		}
+		got[s] = tg
+	}
+	if got["use1"] != "form" {
+		t.Errorf("use1 -> %q; want form", got["use1"])
+	}
+	if got["use2"] != "flash" {
+		t.Errorf("use2 -> %q; want flash", got["use2"])
+	}
+	if _, ok := got["sidebar"]; ok {
+		t.Errorf("sidebar should never be a source of renders_partial")
+	}
+}
+
+func TestResolveViewComponents(t *testing.T) {
+	db := open(t)
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	componentFile := insertFile(t, tx, "app/components/submit_button_component.rb")
+	viewFile := insertFile(t, tx, "app/views/articles/index.html.erb")
+	insertNode(t, tx, "comp", componentFile, "view_component", "SubmitButtonComponent", "SubmitButtonComponent", 1)
+	insertNode(t, tx, "use1", viewFile, "view_component_use", "SubmitButtonComponent", "SubmitButtonComponent", 1)
+	if err := resolve.All(tx, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if got := edgeTarget(t, db, "renders_component"); got != "comp" {
+		t.Fatalf("renders_component target = %q; want comp", got)
+	}
+}
+
 func TestResolveTailwindFansOutToMultipleFiles(t *testing.T) {
 	db := open(t)
 	tx, err := db.Begin()

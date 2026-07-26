@@ -2,6 +2,19 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+- Added partial resolution: `render "name"`/`render partial: "name"` calls
+  resolve to the `app/views/**/_name.*` file they render, following Rails'
+  own same-directory/`app/views`-rooted lookup convention, as a
+  `renders_partial` edge.
+- Added ViewComponent resolution: `render FooComponent.new(...)` resolves to
+  the matching `class Foo < ViewComponent::Base` declaration as a
+  `renders_component` edge.
+- Added `ida unused partial` / `ida unused view_component` (MCP tool
+  `ida_unused`) to list partials/components with no resolved incoming
+  render edge.
+
 ## [0.4.2]
 
 - Fixed a crash (`UNIQUE constraint failed: nodes.id`) where a `validates`

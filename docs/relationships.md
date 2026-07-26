@@ -99,9 +99,53 @@ app/views/articles/index.html.erb
 ```
 
 Multiple matching formats, variants, or templates are intentionally left
-unresolved rather than selecting one. Explicit `render` calls, layouts,
-partials, redirects, Turbo Stream selection, and component rendering are
-planned but not implemented.
+unresolved rather than selecting one. Layouts, redirects, and Turbo Stream
+selection are still planned but not implemented.
+
+## Partials
+
+Any file under `app/views/` whose basename starts with `_` becomes a
+`partial` node, e.g. `app/views/articles/_form.html.erb` -> qualified name
+`articles/form`.
+
+`render "name"` and `render partial: "name"` calls in ERB/HTML templates,
+and `render partial: "name"` calls in Ruby files (controllers, helpers),
+become a `partial_use` node. The bare `render "name"` shorthand is only
+scanned in templates, since the identical syntax in a controller/helper
+renders a full template rather than a partial.
+
+Ida then applies Rails' own lookup convention: a name containing a `/` is
+rooted at `app/views/` (`"shared/flash"` -> `app/views/shared/_flash.*`);
+otherwise it is looked up next to the referencing template (`"form"` from
+`app/views/articles/index.html.erb` -> `app/views/articles/_form.*`). It adds
+a `renders_partial` edge only when exactly one indexed partial matches.
+
+Object-based shorthand (`render @article`, `render @comments`) and
+dynamically computed partial names are not resolved, since they require
+type information Ida does not track.
+
+## ViewComponent
+
+A class declared as `class Foo < ViewComponent::Base` (or
+`< ApplicationComponent`) becomes a `view_component` node, in addition to
+the `class` node every Ruby class declaration already produces.
+
+`render FooComponent.new(...)` — including the `.with_collection.new`
+collection form — becomes a `view_component_use` node wherever it appears
+(Ruby or template), resolved by unqualified class name the same way
+`has_many`/`belongs_to` associations resolve to their target class. A
+`renders_component` edge is added only when exactly one `view_component`
+matches.
+
+## Finding unused partials and components
+
+`ida unused partial` and `ida unused view_component` (MCP tool
+`ida_unused`, argument `kind`) list every `partial`/`view_component` node
+with no incoming `renders_partial`/`renders_component` edge. Because
+object-based `render @model` and dynamically computed render targets are
+never resolved, a partial or component rendered only that way will appear
+here even though it is actually used — treat the result as a lead to check,
+not a guaranteed-dead-code list.
 
 ## Associations
 

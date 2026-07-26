@@ -34,6 +34,12 @@ func All(tx *sql.Tx, generation int64) error {
 	if err := resolveReactMounts(tx, generation); err != nil {
 		return err
 	}
+	if err := resolvePartials(tx, generation); err != nil {
+		return err
+	}
+	if err := resolveViewComponents(tx, generation); err != nil {
+		return err
+	}
 	return resolveTailwind(tx, generation)
 }
 
@@ -610,6 +616,120 @@ func resolveReactMounts(tx *sql.Tx, generation int64) error {
 		}
 	}
 	return nil
+}
+
+// resolvePartials links a `render "name"` / `render partial: "name"` use to
+// the partial file it names, following Rails' own lookup convention: a name
+// containing a "/" is rooted at app/views/, otherwise it is looked up next
+// to the referencing template.
+func resolvePartials(tx *sql.Tx, generation int64) error {
+	rows, err := tx.Query(`
+SELECT n.id, n.qualified_name, n.file_id, n.start_line, f.path
+FROM nodes n JOIN files f ON f.id = n.file_id
+WHERE n.kind = 'partial_use'`)
+	if err != nil {
+		return err
+	}
+	type useRow struct {
+		id, value, fromPath string
+		fileID              int64
+		line                int
+	}
+	var items []useRow
+	for rows.Next() {
+		var item useRow
+		if err := rows.Scan(&item.id, &item.value, &item.fileID, &item.line, &item.fromPath); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, item := range items {
+		prefix, ok := partialFilePrefix(item.value, item.fromPath)
+		if !ok {
+			continue
+		}
+		targetID, count, err := uniquePartial(tx, prefix)
+		if err != nil || count != 1 {
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		if err := insertEdge(tx, item.id, targetID, "renders_partial", "convention", item.fileID, item.line, item.value, generation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// partialFilePrefix returns the app/views-relative file-name prefix (with a
+// trailing "." so the format/handler suffix can vary) that a partial render
+// name resolves to, given the path of the file doing the rendering.
+func partialFilePrefix(value, fromPath string) (string, bool) {
+	if strings.Contains(value, "/") {
+		dir, name := path.Split(value)
+		dir = strings.TrimSuffix(dir, "/")
+		if dir == "" {
+			return "app/views/_" + name + ".", true
+		}
+		return "app/views/" + dir + "/_" + name + ".", true
+	}
+	idx := strings.Index(fromPath, "app/views/")
+	if idx == -1 {
+		return "", false
+	}
+	return path.Dir(fromPath) + "/_" + value + ".", true
+}
+
+func uniquePartial(tx *sql.Tx, prefix string) (string, int, error) {
+	rows, err := tx.Query(`
+SELECT n.id FROM nodes n JOIN files f ON f.id = n.file_id
+WHERE n.kind = 'partial' AND f.path LIKE ? ESCAPE '\' LIMIT 2`, escapeLike(prefix)+"%")
+	if err != nil {
+		return "", 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var id string
+	count := 0
+	for rows.Next() {
+		if err := rows.Scan(&id); err != nil {
+			return "", 0, err
+		}
+		count++
+	}
+	return id, count, rows.Err()
+}
+
+// resolveViewComponents links a `render FooComponent.new(...)` use to the
+// uniquely, conventionally named ViewComponent class it renders, the same
+// unqualified-name matching resolveAssociations uses for classes.
+func resolveViewComponents(tx *sql.Tx, generation int64) error {
+	uses, err := sourceRows(tx, "view_component_use")
+	if err != nil {
+		return err
+	}
+	for _, use := range uses {
+		targetID, count, err := uniqueNodeByName(tx, "view_component", lastPart(use.value))
+		if err != nil || count != 1 {
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		if err := insertEdge(tx, use.id, targetID, "renders_component", "convention", use.fileID, use.line, use.value, generation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func lastPart(name string) string {
+	parts := strings.Split(name, "::")
+	return parts[len(parts)-1]
 }
 
 // tailwindUtilitySuffixes are the Tailwind class-name segments a custom

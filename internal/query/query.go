@@ -314,6 +314,46 @@ func Impact(db *store.DB, nameOrID string, depth, limit int) ([]Relationship, er
 	return result, nil
 }
 
+// unusedEdgeKindByNodeKind maps a renderable node kind to the resolved edge
+// kind that, when present, proves the node is rendered from somewhere.
+var unusedEdgeKindByNodeKind = map[string]string{
+	"partial":        "renders_partial",
+	"view_component": "renders_component",
+}
+
+// Unused returns every node of the given kind ("partial" or
+// "view_component") that has no incoming resolved render edge. It only
+// reports what Ida could not find a renderer for; a partial rendered via an
+// object-based `render @model` call or a dynamically computed name is not
+// tracked and will appear here even though it may be used.
+func Unused(db *store.DB, kind string) ([]store.SearchResult, error) {
+	edgeKind, ok := unusedEdgeKindByNodeKind[kind]
+	if !ok {
+		return nil, fmt.Errorf("unsupported unused kind %q (want partial or view_component)", kind)
+	}
+	rows, err := db.Query(`
+SELECT n.id, n.kind, n.name, n.qualified_name, f.path, n.start_line, n.end_line,
+       f.content_hash, n.confidence, n.extractor
+FROM nodes n JOIN files f ON f.id = n.file_id
+WHERE n.kind = ?
+  AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.target_id = n.id AND e.kind = ?)
+ORDER BY f.path`, kind, edgeKind)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var results []store.SearchResult
+	for rows.Next() {
+		var result store.SearchResult
+		if err := rows.Scan(&result.ID, &result.Kind, &result.Name, &result.QualifiedName, &result.Path,
+			&result.StartLine, &result.EndLine, &result.ContentHash, &result.Confidence, &result.Extractor); err != nil {
+			return nil, err
+		}
+		results = append(results, result)
+	}
+	return results, rows.Err()
+}
+
 func isTokenSeparator(r rune) bool {
 	isWordRune := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_!?=:#/", r)
 	return !isWordRune

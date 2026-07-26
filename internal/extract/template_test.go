@@ -42,6 +42,23 @@ func TestTemplateStimulusAndTurboAttrs(t *testing.T) {
 	}
 }
 
+func TestTemplateRenderPartialAndComponent(t *testing.T) {
+	content := []byte(`<%= render "form" %>
+<%= render partial: "shared/flash" %>
+<%= render(SubmitButtonComponent.new(label: "Go")) %>
+`)
+	nodes := template("app/views/articles/index.html.erb", content)
+
+	partials := nodeByKind(nodes, "partial_use")
+	if len(partials) != 2 || partials[0].Name != "form" || partials[1].Name != "shared/flash" {
+		t.Fatalf("partial_use = %#v; want form and shared/flash", partials)
+	}
+	components := nodeByKind(nodes, "view_component_use")
+	if len(components) != 1 || components[0].Name != "SubmitButtonComponent" {
+		t.Fatalf("view_component_use = %#v; want SubmitButtonComponent", components)
+	}
+}
+
 func TestTemplateDynamicClassIsSkipped(t *testing.T) {
 	content := []byte(`<div class="btn <%= 'active' if x %>"></div>
 <div className="static-only"></div>

@@ -75,6 +75,48 @@ end
 	}
 }
 
+func TestPartialFileTagged(t *testing.T) {
+	nodes := File("app/views/articles/_form.html.erb", []byte("<div></div>\n"))
+	partials := nodeByKind(nodes, "partial")
+	if len(partials) != 1 || partials[0].Name != "form" || partials[0].QualifiedName != "articles/form" {
+		t.Fatalf("partial = %#v; want articles/form", partials)
+	}
+}
+
+func TestRubyRenderCallsExplicitOnly(t *testing.T) {
+	content := []byte(`class ArticlesController < ApplicationController
+  def show
+    render partial: "form"
+    render "not_a_partial_in_a_controller"
+    render SubmitButtonComponent.new
+  end
+end
+`)
+	nodes := File("app/controllers/articles_controller.rb", content)
+	partials := nodeByKind(nodes, "partial_use")
+	if len(partials) != 1 || partials[0].Name != "form" {
+		t.Fatalf("partial_use = %#v; want only the explicit partial: form call", partials)
+	}
+	components := nodeByKind(nodes, "view_component_use")
+	if len(components) != 1 || components[0].Name != "SubmitButtonComponent" {
+		t.Fatalf("view_component_use = %#v; want SubmitButtonComponent", components)
+	}
+}
+
+func TestViewComponentClassTagged(t *testing.T) {
+	content := []byte(`class SubmitButtonComponent < ViewComponent::Base
+  def initialize(label:)
+    @label = label
+  end
+end
+`)
+	nodes := File("app/components/submit_button_component.rb", content)
+	got := nodeByKind(nodes, "view_component")
+	if len(got) != 1 || got[0].QualifiedName != "SubmitButtonComponent" {
+		t.Fatalf("view_component = %#v; want SubmitButtonComponent", got)
+	}
+}
+
 func TestAssociationsValidationsAndScopes(t *testing.T) {
 	content := []byte(`class Article < ApplicationRecord
   belongs_to :author

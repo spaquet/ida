@@ -23,14 +23,15 @@ type Node struct {
 }
 
 var (
-	rubyType    = regexp.MustCompile(`^\s*(class|module)\s+([A-Z][A-Za-z0-9_:]*)`)
-	rubyMethod  = regexp.MustCompile(`^\s*def\s+(self\.)?([A-Za-z_][A-Za-z0-9_!?=]*)`)
-	association = regexp.MustCompile(`^\s*(has_many|has_one|belongs_to|has_and_belongs_to_many)\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
-	validates   = regexp.MustCompile(`^\s*(validates?)\b(.*)$`)
-	scopeDecl   = regexp.MustCompile(`^\s*scope\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
-	broadcasts  = regexp.MustCompile(`^\s*(broadcasts_to|broadcasts_refreshes|broadcasts_refreshes_to|broadcasts|broadcast_append_to|broadcast_prepend_to|broadcast_replace_to|broadcast_remove_to|broadcast_refresh_to|broadcast_refresh_later_to)\b\s*(.*)$`)
-	firstSymbol = regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)
-	keywordArg  = regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*:\s`)
+	rubyType           = regexp.MustCompile(`^\s*(class|module)\s+([A-Z][A-Za-z0-9_:]*)`)
+	viewComponentClass = regexp.MustCompile(`^\s*class\s+[A-Z][A-Za-z0-9_:]*\s*<\s*(?:::)?(?:ViewComponent::Base|ApplicationComponent)\b`)
+	rubyMethod         = regexp.MustCompile(`^\s*def\s+(self\.)?([A-Za-z_][A-Za-z0-9_!?=]*)`)
+	association        = regexp.MustCompile(`^\s*(has_many|has_one|belongs_to|has_and_belongs_to_many)\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	validates          = regexp.MustCompile(`^\s*(validates?)\b(.*)$`)
+	scopeDecl          = regexp.MustCompile(`^\s*scope\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	broadcasts         = regexp.MustCompile(`^\s*(broadcasts_to|broadcasts_refreshes|broadcasts_refreshes_to|broadcasts|broadcast_append_to|broadcast_prepend_to|broadcast_replace_to|broadcast_remove_to|broadcast_refresh_to|broadcast_refresh_later_to)\b\s*(.*)$`)
+	firstSymbol        = regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	keywordArg         = regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*:\s`)
 
 	routeSingle    = regexp.MustCompile(`^\s*(get|post|put|patch|delete)\s+["']([^"']+)["'](?:\s*,?\s*(?:to:|=>)\s*["']([^"'#]+)#([^"']+)["'])`)
 	routeRoot      = regexp.MustCompile(`^\s*root\s+(?:to:\s*)?["']([^"'#]+)#([^"']+)["']`)
@@ -97,7 +98,36 @@ func File(path string, content []byte) []Node {
 	if isTemplatePath(path, ext) {
 		nodes = append(nodes, template(path, content)...)
 	}
+	if dir, name, ok := partialName(path); ok {
+		qualified := name
+		if dir != "" {
+			qualified = dir + "/" + name
+		}
+		nodes = append(nodes, node(path, "partial", name, qualified, 1, lineCount(content), "partials-v1"))
+	}
 	return nodes
+}
+
+// partialName reports the conventional lookup name of a Rails partial file
+// such as app/views/articles/_form.html.erb: dir "articles", name "form".
+func partialName(path string) (dir, name string, ok bool) {
+	idx := strings.Index(path, "app/views/")
+	if idx == -1 {
+		return "", "", false
+	}
+	rel := path[idx+len("app/views/"):]
+	d, base := filepath.Split(rel)
+	if !strings.HasPrefix(base, "_") {
+		return "", "", false
+	}
+	base = strings.TrimPrefix(base, "_")
+	if i := strings.Index(base, "."); i >= 0 {
+		base = base[:i]
+	}
+	if base == "" {
+		return "", "", false
+	}
+	return strings.TrimSuffix(d, "/"), base, true
 }
 
 // isTemplatePath reports whether a file should be scanned for Stimulus
@@ -283,6 +313,8 @@ func ruby(path string, content []byte) []Node {
 		trimmed := strings.TrimSpace(text)
 		indent := len(text) - len(strings.TrimLeft(text, " \t"))
 
+		nodes = append(nodes, renderUses(path, text, line, false)...)
+
 		if trimmed == "end" {
 			if len(stack) > 0 && indent <= stack[len(stack)-1].indent {
 				stack = stack[:len(stack)-1]
@@ -293,6 +325,9 @@ func ruby(path string, content []byte) []Node {
 			name := match[2]
 			nodes = append(nodes, node(path, match[1], lastPart(name), name, line, line, "ruby-declarations-v1"))
 			stack = append(stack, classFrame{indent: indent, name: lastPart(name), isClass: match[1] == "class"})
+			if vc := viewComponentClass.FindStringSubmatch(text); vc != nil {
+				nodes = append(nodes, node(path, "view_component", lastPart(name), name, line, line, "view-components-v1"))
+			}
 			continue
 		}
 		if match := rubyMethod.FindStringSubmatch(text); match != nil {

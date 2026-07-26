@@ -45,6 +45,8 @@ Commands:
   node <name-or-id>    Explain one graph node
   path <from> <to>     Find a relationship path
   impact <name-or-id>  Show likely change effects
+  unused <partial|view_component>
+                       List partials or view components with no resolved render
   docs add <path|url>  Add an explicit documentation source
   mcp [path]           Serve MCP over stdio
   mcp config [agent...]
@@ -222,6 +224,24 @@ func run(args []string) error {
 		}
 		decision := scope.Decide(args[1])
 		return printValue(decision, jsonOutput)
+	case "unused":
+		if len(args) != 2 {
+			return errors.New("usage: ida unused <partial|view_component>")
+		}
+		root, err := project.Discover(".")
+		if err != nil {
+			return err
+		}
+		db, err := store.OpenExisting(root)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = db.Close() }()
+		results, err := query.Unused(db, args[1])
+		if err != nil {
+			return err
+		}
+		return printValue(results, jsonOutput)
 	case "search", "context", "node", "path", "impact":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: ida %s <query>", args[0])
