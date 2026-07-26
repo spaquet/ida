@@ -4,27 +4,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.5.2]
 
-- Fixed method/class qualified names for Ruby classes nested inside another
-  class or module with no repeated outer name in source (e.g. a bare `class
-  Scope` inside `class AgentFlowPolicy`, the common Pundit policy-scope
-  shape). Qualified names are now built from the full enclosing nesting
-  stack (`AgentFlowPolicy::Scope`, not `Scope`), so unrelated files' nested
-  classes of the same short name no longer collide into one identity —
-  previously this made every Pundit `Scope#initialize`/`Scope#resolve`
-  across a whole app look like one method declared N times.
-- Added `ida unused method` (and `method` as an `ida_unused` MCP kind) to
-  list methods with no resolved incoming use. Coverage is heuristic: a
-  same-named `.method`/`:method` reference anywhere in the codebase counts
-  as a use (matched by name only, since most Ruby calls are on a
-  local/instance variable whose class Ida cannot resolve), and
-  `initialize`, Pundit `*Policy`/`*Policy::Scope` methods, and
-  `?`/`!`-suffixed methods are excluded outright as conventionally
-  framework/template-invoked. Treat results as a lead list, not a
-  dead-code list.
-- Removed `db/migrate/`, `public/`, `bin/`, and `vendor/` from the default
-  indexing scope. Migrations are framework-invoked-only boilerplate that
-  only added noise to `ida unused method`; `public/`, `bin`, and `vendor`
-  are never authored business logic.
 - Changed `ida impact`'s default depth from 2 to 1 (CLI and MCP tool
   `ida_impact`). At depth 2, traversal walked straight through any
   high-fan-out hub node (e.g. a multi-tenant `Organization` model that
