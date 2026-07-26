@@ -18,7 +18,7 @@ type ContextFile struct {
 	StartLine  int    `json:"start_line"`
 	EndLine    int    `json:"end_line"`
 	Excerpt    string `json:"excerpt"`
-	Confidence string `json:"confidence"`
+	Confidence int    `json:"confidence"`
 }
 
 type ContextResult struct {
@@ -36,7 +36,7 @@ type NodeResult struct {
 
 type Relationship struct {
 	Kind       string `json:"kind"`
-	Confidence string `json:"confidence"`
+	Confidence int    `json:"confidence"`
 	SourceID   string `json:"source_id"`
 	SourceName string `json:"source_name"`
 	TargetID   string `json:"target_id"`
@@ -74,7 +74,7 @@ WITH candidates AS (
   WHERE n.kind <> 'document_section'
   UNION ALL
   SELECT s.id, 'document_section', s.heading_path, d.source || '#' || s.heading_path,
-         d.source, s.start_line, s.end_line, d.content_hash, 'exact', 'document-sections-v1', s.body
+         d.source, s.start_line, s.end_line, d.content_hash, 100, 'document-sections-v1', s.body
   FROM document_sections s JOIN documents d ON d.id = s.document_id
 )
 SELECT id, kind, name, qualified_name, path, start_line, end_line,

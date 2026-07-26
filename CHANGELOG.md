@@ -2,6 +2,37 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.2]
+
+- Changed `ida impact`'s default depth from 2 to 1 (CLI and MCP tool
+  `ida_impact`). At depth 2, traversal walked straight through any
+  high-fan-out hub node (e.g. a multi-tenant `Organization` model that
+  dozens of unrelated models `belongs_to`), surfacing most of the app as
+  "impacted" by an unrelated change. Depth 1 now returns only relationships
+  that directly touch the queried node; `depth` can still be raised
+  explicitly when a deeper walk is genuinely wanted.
+- Changed `confidence` on every node and edge from a string label
+  (`"exact"`/`"convention"`/`"lsp"`) to an integer 0-100, so consuming agents
+  get a directly usable value instead of an opaque enum. Every fact Ida
+  records today is deterministic and unambiguous by construction, so
+  `confidence` is currently always `100`; a lower score is reserved for a
+  planned `ambiguous` tier. This is a breaking schema change — run `ida sync
+  --rebuild` after upgrading to convert an existing index.
+- Fixed a crash (`UNIQUE constraint failed: nodes.id`) where a line
+  referencing the same `Receiver.method` call twice (e.g.
+  `Rails.env.development? || Rails.env.test?`) produced two identical
+  `method_call_use` nodes; node extraction now de-duplicates by ID.
+- `ida mcp` now prints its status, transport, project path, and exit
+  instructions to stderr on start, instead of starting silently.
+- Documented `ida unused`, `ida duplicates`, `ida env`, and `ida mcp config`
+  in the CLI reference, and `ida_unused`/`ida_duplicates`/`ida_env` in the MCP
+  reference — all previously implemented but undocumented.
+- Clarified that `ida mcp` already runs its own in-process watcher (the same
+  one `ida watch` runs standalone); running both against the same project is
+  redundant and can contend for the `.ida/ida.db` file lock.
+- README's command list now points to the CLI/MCP references instead of
+  listing commands with no context.
+
 ## [0.5.0]
 
 - Portability hardening: CI now runs gofmt, go vet, golangci-lint, build, and

@@ -31,7 +31,7 @@ func insertNode(t *testing.T, tx *sql.Tx, id string, fileID int64, kind, name, q
 	t.Helper()
 	_, err := tx.Exec(`
 INSERT INTO nodes(id, file_id, kind, name, qualified_name, start_line, end_line, extractor, confidence, generation)
-VALUES (?, ?, ?, ?, ?, ?, ?, 'test', 'exact', 1)`, id, fileID, kind, name, qualified, line, line)
+VALUES (?, ?, ?, ?, ?, ?, ?, 'test', 100, 1)`, id, fileID, kind, name, qualified, line, line)
 	if err != nil {
 		t.Fatal(err)
 	}

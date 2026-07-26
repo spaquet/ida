@@ -109,7 +109,7 @@ func handle(root string, db *store.DB, request request) (any, *rpcError) {
 		return map[string]any{
 			"protocolVersion": "2025-06-18",
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
-			"serverInfo":      map[string]any{"name": "ida", "version": "0.4.2"},
+			"serverInfo":      map[string]any{"name": "ida", "version": "0.5.2"},
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
@@ -274,7 +274,7 @@ func callTool(root string, db *store.DB, name string, arguments json.RawMessage)
 			return nil, err
 		}
 		if input.Depth == 0 {
-			input.Depth = 2
+			input.Depth = 1
 		}
 		if input.Limit == 0 {
 			input.Limit = 50
