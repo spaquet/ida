@@ -18,3 +18,13 @@ out-of-scope list).
   route, unused methods via call graph). Fully mechanical for static
   dispatch; falls back to the LLM disambiguation pass above for dynamic
   cases.
+- **Runtime JS/TS capture (rejected for now).** Considered a Chrome
+  extension to capture JS/TS actually executed in the browser, to cover
+  Stimulus/Turbo/JS gaps static analysis might miss. Rejected: breaks
+  local-first/no-daemon/no-network stance (AGENTS.md), and runtime DOM
+  capture doesn't fit the deterministic, git-diffable Turso index model.
+  Static Stimulus/Turbo/JSX mapping already covers `data-*` attrs,
+  controller identifiers, exports (architecture.md:108-115). Revisit only
+  if static coverage gaps (e.g. dynamic `import()`) are measured and large
+  enough to matter — same flag-unknown/disambiguate pattern as the LLM
+  pass above, not a new capture channel.
