@@ -84,7 +84,7 @@ func assertNode(t *testing.T, root, name string, want int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	var got int
 	if err := db.QueryRow("SELECT count(*) FROM nodes WHERE name = ?", name).Scan(&got); err != nil {
 		t.Fatal(err)

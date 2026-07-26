@@ -29,12 +29,20 @@ connects the two.
 ## Intended experience
 
 ```sh
-ida init .
+ida --version
+ida init . --install-lsp
+ida doctor
+ida docs add docs/
+ida docs add https://example.com/team-handbook.md
 ida status
 ida context "How does a comment update reach the browser?"
 ida impact publish
 ida mcp
 ```
+
+`ida init --install-lsp` detects existing project-local and executable language
+servers first. It shows each missing installation command and asks before
+changing a project manifest or global toolchain.
 
 Build and try the implemented foundation:
 

@@ -253,7 +253,7 @@ application.
   "include": ["engines/payments/**"],
   "docs": ["docs/**"],
   "lsp": {
-    "ruby": ["bundle", "exec", "ruby-lsp"],
+    "ruby": ["ruby-lsp"],
     "typescript": ["typescript-language-server", "--stdio"]
   }
 }

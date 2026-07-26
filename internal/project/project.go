@@ -13,9 +13,10 @@ import (
 var markers = []string{"Gemfile", "config/application.rb", "config/routes.rb"}
 
 type Config struct {
-	Include []string `json:"include"`
-	Exclude []string `json:"exclude"`
-	Docs    []string `json:"docs"`
+	Include []string            `json:"include,omitempty"`
+	Exclude []string            `json:"exclude,omitempty"`
+	Docs    []string            `json:"docs,omitempty"`
+	LSP     map[string][]string `json:"lsp,omitempty"`
 }
 
 type Scope struct {
@@ -69,14 +70,11 @@ func LoadScope(root string) (*Scope, error) {
 	if err != nil {
 		return nil, err
 	}
-	scope := &Scope{root: root}
-	if data, err := os.ReadFile(filepath.Join(root, "ida.json")); err == nil {
-		if err := json.Unmarshal(data, &scope.config); err != nil {
-			return nil, errors.New("invalid ida.json: " + err.Error())
-		}
-	} else if !errors.Is(err, os.ErrNotExist) {
+	config, err := LoadConfig(root)
+	if err != nil {
 		return nil, err
 	}
+	scope := &Scope{root: root, config: config}
 	if data, err := os.ReadFile(filepath.Join(root, ".gitignore")); err == nil {
 		for line := range strings.Lines(string(data)) {
 			line = strings.TrimSpace(line)
@@ -86,6 +84,80 @@ func LoadScope(root string) (*Scope, error) {
 		}
 	}
 	return scope, nil
+}
+
+func LoadConfig(root string) (Config, error) {
+	var config Config
+	data, err := os.ReadFile(filepath.Join(root, "ida.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return config, nil
+	}
+	if err != nil {
+		return config, err
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return config, errors.New("invalid ida.json: " + err.Error())
+	}
+	return config, nil
+}
+
+func AddDocumentSource(root, source string) (string, error) {
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	config, err := LoadConfig(root)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(source, "http://") && !strings.HasPrefix(source, "https://") {
+		source, err = localDocumentSource(root, source)
+		if err != nil {
+			return "", err
+		}
+	}
+	if !slices.Contains(config.Docs, source) {
+		config.Docs = append(config.Docs, source)
+		slices.Sort(config.Docs)
+	}
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	data = append(data, '\n')
+	err = os.WriteFile(filepath.Join(root, "ida.json"), data, 0o644)
+	return source, err
+}
+
+func localDocumentSource(root, source string) (string, error) {
+	if strings.TrimSpace(source) == "" {
+		return "", errors.New("documentation path must not be empty")
+	}
+	if !filepath.IsAbs(source) {
+		source = filepath.Join(root, source)
+	}
+	resolved, err := filepath.EvalSymlinks(source)
+	if err != nil {
+		return "", err
+	}
+	relative, err := filepath.Rel(root, resolved)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return "", errors.New("documentation path is outside project root")
+	}
+	relative = filepath.ToSlash(relative)
+	if reason := hardExcluded(relative); reason != "" {
+		return "", errors.New("documentation path is excluded: " + reason)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		relative = strings.TrimSuffix(relative, "/") + "/**"
+	} else if !slices.Contains([]string{".md", ".markdown", ".adoc", ".asciidoc", ".html", ".txt"}, strings.ToLower(filepath.Ext(relative))) {
+		return "", errors.New("unsupported documentation type")
+	}
+	return relative, nil
 }
 
 func (s *Scope) Decide(path string) Decision {
