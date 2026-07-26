@@ -2,8 +2,10 @@ package doctor
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spaquet/ida/internal/lsp"
+	"github.com/spaquet/ida/internal/project"
 	"github.com/spaquet/ida/internal/store"
 )
 
@@ -55,6 +57,14 @@ func Run(root string) Report {
 			}
 			report.Checks = append(report.Checks, Check{Name: "watcher", Status: watcherStatus, Detail: detail})
 		}
+	}
+	if scope, scopeErr := project.LoadScope(root); scopeErr != nil {
+		report.Healthy = false
+		report.Checks = append(report.Checks, Check{Name: "engines", Status: "error", Detail: scopeErr.Error()})
+	} else if engines := scope.Engines(); len(engines) > 0 {
+		report.Checks = append(report.Checks, Check{Name: "engines", Status: "ok", Detail: strings.Join(engines, ", ")})
+	} else {
+		report.Checks = append(report.Checks, Check{Name: "engines", Status: "ok", Detail: "none found"})
 	}
 	report.LSP, err = lsp.Detect(root)
 	if err != nil {

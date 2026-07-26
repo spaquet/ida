@@ -17,6 +17,19 @@ func TestSplitAndPrivateURL(t *testing.T) {
 	}
 }
 
+func TestExtractLinksAndMentions(t *testing.T) {
+	body := "See [the guide](https://example.com/guide) and <a href=\"handbook.md\">handbook</a>.\n" +
+		"Use `ArticlesController` to render `app/models/article.rb`, not a `full sentence`."
+	links := extractLinks(body)
+	if len(links) != 2 || links[0] != "handbook.md" || links[1] != "https://example.com/guide" {
+		t.Fatalf("extractLinks() = %#v", links)
+	}
+	mentions := extractMentions(body)
+	if len(mentions) != 2 || mentions[0] != "ArticlesController" || mentions[1] != "app/models/article.rb" {
+		t.Fatalf("extractMentions() = %#v", mentions)
+	}
+}
+
 func TestRemoteDocumentSearchAndContext(t *testing.T) {
 	root := t.TempDir()
 	db, err := store.Open(root)

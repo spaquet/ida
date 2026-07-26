@@ -157,7 +157,7 @@ Refresh explicit changed paths or rebuild the complete scoped index.
 ```
 
 Paths are validated against the project root and the shared project scope.
-Omit `paths` to perform the same complete rebuild as `ida sync`.
+Omit `paths` to perform the same complete rebuild as `ida sync --rebuild`.
 
 ## JSON-RPC example
 

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,7 +44,47 @@ var (
 	asciidocHeading = regexp.MustCompile(`^(={1,6})\s+(.+?)\s*$`)
 	htmlHeading     = regexp.MustCompile(`(?is)<h[1-6][^>]*>(.*?)</h[1-6]>`)
 	htmlTag         = regexp.MustCompile(`(?s)<[^>]*>`)
+	markdownLink    = regexp.MustCompile(`\[[^\]]*\]\(([^)\s]+)\)`)
+	htmlLink        = regexp.MustCompile(`(?is)<a\s[^>]*href=["']([^"']+)["']`)
+	codeSpan        = regexp.MustCompile("`([^`\n]+)`")
 )
+
+// extractLinks returns the deduplicated, sorted set of markdown and HTML
+// hyperlink targets in a document section body.
+func extractLinks(body string) []string {
+	seen := make(map[string]bool)
+	var links []string
+	for _, source := range [][][]string{markdownLink.FindAllStringSubmatch(body, -1), htmlLink.FindAllStringSubmatch(body, -1)} {
+		for _, match := range source {
+			link := strings.TrimSpace(match[1])
+			if link == "" || seen[link] {
+				continue
+			}
+			seen[link] = true
+			links = append(links, link)
+		}
+	}
+	slices.Sort(links)
+	return links
+}
+
+// extractMentions returns the deduplicated, sorted set of explicit
+// code-symbol mentions: backtick-quoted spans with no whitespace, e.g.
+// `ArticlesController` or `app/models/article.rb`.
+func extractMentions(body string) []string {
+	seen := make(map[string]bool)
+	var mentions []string
+	for _, match := range codeSpan.FindAllStringSubmatch(body, -1) {
+		symbol := strings.TrimSpace(match[1])
+		if symbol == "" || strings.ContainsAny(symbol, " \t") || seen[symbol] {
+			continue
+		}
+		seen[symbol] = true
+		mentions = append(mentions, symbol)
+	}
+	slices.Sort(mentions)
+	return mentions
+}
 
 func AddRemote(ctx context.Context, root, source string) (Result, error) {
 	parsed, err := validateURL(source)
@@ -148,11 +190,19 @@ VALUES (?, ?, ?, ?, ?, ?)`, documentID, source, sourceType, hex.EncodeToString(s
 		return 0, err
 	}
 	for i, part := range parts {
+		links, err := json.Marshal(extractLinks(part.body))
+		if err != nil {
+			return 0, err
+		}
+		mentions, err := json.Marshal(extractMentions(part.body))
+		if err != nil {
+			return 0, err
+		}
 		if _, err := db.Exec(`
-INSERT INTO document_sections(id, document_id, heading_path, body, start_line, end_line)
-VALUES (?, ?, ?, ?, ?, ?)`,
+INSERT INTO document_sections(id, document_id, heading_path, body, start_line, end_line, links, mentions)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			stableID(documentID, fmt.Sprintf("%d", i), part.heading), documentID, part.heading,
-			part.body, part.start, part.end); err != nil {
+			part.body, part.start, part.end, string(links), string(mentions)); err != nil {
 			return 0, err
 		}
 	}

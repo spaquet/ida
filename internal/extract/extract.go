@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -22,12 +23,50 @@ type Node struct {
 }
 
 var (
-	rubyType   = regexp.MustCompile(`^\s*(class|module)\s+([A-Z][A-Za-z0-9_:]*)`)
-	rubyMethod = regexp.MustCompile(`^\s*def\s+(self\.)?([A-Za-z_][A-Za-z0-9_!?=]*)`)
-	route      = regexp.MustCompile(`^\s*(get|post|put|patch|delete)\s+["']([^"']+)["'](?:\s*,?\s*(?:to:|=>)\s*["']([^"'#]+)#([^"']+)["'])`)
-	heading    = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
-	adocHead   = regexp.MustCompile(`^(={1,6})\s+(.+?)\s*$`)
+	rubyType    = regexp.MustCompile(`^\s*(class|module)\s+([A-Z][A-Za-z0-9_:]*)`)
+	rubyMethod  = regexp.MustCompile(`^\s*def\s+(self\.)?([A-Za-z_][A-Za-z0-9_!?=]*)`)
+	association = regexp.MustCompile(`^\s*(has_many|has_one|belongs_to|has_and_belongs_to_many)\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	validates   = regexp.MustCompile(`^\s*(validates?)\b(.*)$`)
+	scopeDecl   = regexp.MustCompile(`^\s*scope\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	firstSymbol = regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)
+
+	routeSingle    = regexp.MustCompile(`^\s*(get|post|put|patch|delete)\s+["']([^"']+)["'](?:\s*,?\s*(?:to:|=>)\s*["']([^"'#]+)#([^"']+)["'])`)
+	routeRoot      = regexp.MustCompile(`^\s*root\s+(?:to:\s*)?["']([^"'#]+)#([^"']+)["']`)
+	routeNamespace = regexp.MustCompile(`^\s*namespace\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	routeResource  = regexp.MustCompile(`^\s*(resources|resource)\s+:([a-zA-Z_][a-zA-Z0-9_]*)(.*)$`)
+	opensBlock     = regexp.MustCompile(`\bdo(\s*\|[^|]*\|)?\s*$`)
+	onlyOption     = regexp.MustCompile(`only:\s*(\[[^\]]*\]|:[a-zA-Z_]+)`)
+	exceptOption   = regexp.MustCompile(`except:\s*(\[[^\]]*\]|:[a-zA-Z_]+)`)
+	controllerOpt  = regexp.MustCompile(`controller:\s*["']?([a-zA-Z0-9_/]+)["']?`)
+
+	heading  = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
+	adocHead = regexp.MustCompile(`^(={1,6})\s+(.+?)\s*$`)
 )
+
+type resourceAction struct {
+	name       string
+	method     string
+	pathSuffix string
+}
+
+var pluralActions = []resourceAction{
+	{"index", "GET", ""},
+	{"create", "POST", ""},
+	{"new", "GET", "/new"},
+	{"show", "GET", "/:id"},
+	{"edit", "GET", "/:id/edit"},
+	{"update", "PATCH", "/:id"},
+	{"destroy", "DELETE", "/:id"},
+}
+
+var singularActions = []resourceAction{
+	{"new", "GET", "/new"},
+	{"create", "POST", ""},
+	{"show", "GET", ""},
+	{"edit", "GET", "/edit"},
+	{"update", "PATCH", ""},
+	{"destroy", "DELETE", ""},
+}
 
 func File(path string, content []byte) []Node {
 	nodes := []Node{node(path, "file", path, path, 1, lineCount(content), "file-v1")}
@@ -44,28 +83,170 @@ func File(path string, content []byte) []Node {
 	return nodes
 }
 
+// routeFrame tracks the path and controller-module prefix contributed by
+// enclosing namespace/resources blocks in config/routes.rb.
+type routeFrame struct {
+	path   []string
+	module []string
+}
+
 func routes(path string, content []byte) []Node {
 	var nodes []Node
+	var stack []routeFrame
 	scanner := bufio.NewScanner(strings.NewReader(string(content)))
 	for line := 1; scanner.Scan(); line++ {
-		match := route.FindStringSubmatch(scanner.Text())
-		if match == nil {
+		text := scanner.Text()
+		trimmed := strings.TrimSpace(text)
+		var top routeFrame
+		if len(stack) > 0 {
+			top = stack[len(stack)-1]
+		}
+
+		if trimmed == "end" {
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			}
 			continue
 		}
-		name := strings.ToUpper(match[1]) + " " + match[2]
-		nodes = append(nodes, node(path, "route", name, match[3]+"#"+match[4], line, line, "rails-routes-v1"))
+		if match := routeNamespace.FindStringSubmatch(text); match != nil {
+			name := match[1]
+			stack = append(stack, routeFrame{path: appendCopy(top.path, name), module: appendCopy(top.module, name)})
+			continue
+		}
+		if match := routeResource.FindStringSubmatch(text); match != nil {
+			kind, name, rest := match[1], match[2], match[3]
+			nodes = append(nodes, resourceRoutes(path, line, kind, name, rest, top)...)
+			if opensBlock.MatchString(trimmed) {
+				stack = append(stack, routeFrame{path: appendCopy(top.path, name), module: top.module})
+			}
+			continue
+		}
+		if match := routeRoot.FindStringSubmatch(text); match != nil {
+			target := joinController(top.module, match[1]) + "#" + match[2]
+			nodes = append(nodes, node(path, "route", "ROOT /", target, line, line, "rails-routes-v2"))
+			continue
+		}
+		if match := routeSingle.FindStringSubmatch(text); match != nil {
+			name := strings.ToUpper(match[1]) + " " + joinPath(top.path, match[2])
+			target := joinController(top.module, match[3]) + "#" + match[4]
+			nodes = append(nodes, node(path, "route", name, target, line, line, "rails-routes-v2"))
+			continue
+		}
+		if opensBlock.MatchString(trimmed) {
+			stack = append(stack, routeFrame{path: top.path, module: top.module})
+		}
 	}
 	return nodes
 }
 
+func resourceRoutes(path string, line int, kind, name, rest string, ctx routeFrame) []Node {
+	only, except, controllerOverride := parseResourceOptions(rest)
+	actions := pluralActions
+	controllerName := name
+	if kind == "resource" {
+		actions = singularActions
+		controllerName = pluralize(name)
+	}
+	if controllerOverride != "" {
+		controllerName = controllerOverride
+	}
+	actions = filterActions(actions, only, except)
+	controllerPath := joinController(ctx.module, controllerName)
+	urlBase := joinPath(ctx.path, name)
+	var nodes []Node
+	for _, action := range actions {
+		routeName := action.method + " " + urlBase + action.pathSuffix
+		nodes = append(nodes, node(path, "route", routeName, controllerPath+"#"+action.name, line, line, "rails-routes-v2"))
+	}
+	return nodes
+}
+
+func parseResourceOptions(rest string) (only, except []string, controller string) {
+	if m := onlyOption.FindStringSubmatch(rest); m != nil {
+		only = symbols(m[1])
+	}
+	if m := exceptOption.FindStringSubmatch(rest); m != nil {
+		except = symbols(m[1])
+	}
+	if m := controllerOpt.FindStringSubmatch(rest); m != nil {
+		controller = m[1]
+	}
+	return
+}
+
+func symbols(text string) []string {
+	var result []string
+	for _, m := range firstSymbol.FindAllStringSubmatch(text, -1) {
+		result = append(result, m[1])
+	}
+	return result
+}
+
+func filterActions(actions []resourceAction, only, except []string) []resourceAction {
+	if len(only) == 0 && len(except) == 0 {
+		return actions
+	}
+	var result []resourceAction
+	for _, a := range actions {
+		if len(only) > 0 && !slices.Contains(only, a.name) {
+			continue
+		}
+		if len(except) > 0 && slices.Contains(except, a.name) {
+			continue
+		}
+		result = append(result, a)
+	}
+	return result
+}
+
+func appendCopy(base []string, extra ...string) []string {
+	return append(append([]string{}, base...), extra...)
+}
+
+func joinPath(prefix []string, raw string) string {
+	raw = strings.Trim(raw, "/")
+	full := appendCopy(prefix)
+	if raw != "" {
+		full = append(full, raw)
+	}
+	if len(full) == 0 {
+		return "/"
+	}
+	return "/" + strings.Join(full, "/")
+}
+
+func joinController(prefix []string, name string) string {
+	return strings.Join(appendCopy(prefix, name), "/")
+}
+
+type classFrame struct {
+	indent  int
+	name    string
+	isClass bool
+}
+
+// ruby walks a Ruby file line by line, tracking an indentation-based stack of
+// enclosing class/module declarations so associations, validations, and
+// scopes can be attributed to the class that declares them.
 func ruby(path string, content []byte) []Node {
 	var nodes []Node
+	var stack []classFrame
 	scanner := bufio.NewScanner(strings.NewReader(string(content)))
 	for line := 1; scanner.Scan(); line++ {
 		text := scanner.Text()
+		trimmed := strings.TrimSpace(text)
+		indent := len(text) - len(strings.TrimLeft(text, " \t"))
+
+		if trimmed == "end" {
+			if len(stack) > 0 && indent <= stack[len(stack)-1].indent {
+				stack = stack[:len(stack)-1]
+			}
+			continue
+		}
 		if match := rubyType.FindStringSubmatch(text); match != nil {
 			name := match[2]
 			nodes = append(nodes, node(path, match[1], lastPart(name), name, line, line, "ruby-declarations-v1"))
+			stack = append(stack, classFrame{indent: indent, name: lastPart(name), isClass: match[1] == "class"})
 			continue
 		}
 		if match := rubyMethod.FindStringSubmatch(text); match != nil {
@@ -75,9 +256,43 @@ func ruby(path string, content []byte) []Node {
 				qualified = "self." + name
 			}
 			nodes = append(nodes, node(path, "method", name, qualified, line, line, "ruby-declarations-v1"))
+			continue
+		}
+		owner := classOwner(stack)
+		if owner == "" {
+			continue
+		}
+		if match := association.FindStringSubmatch(text); match != nil {
+			macro, name := match[1], match[2]
+			nodes = append(nodes, node(path, "association", name, owner+"#"+macro+":"+name, line, line, "ruby-associations-v1"))
+			continue
+		}
+		if match := scopeDecl.FindStringSubmatch(text); match != nil {
+			name := match[1]
+			nodes = append(nodes, node(path, "scope", name, owner+"#scope:"+name, line, line, "ruby-associations-v1"))
+			continue
+		}
+		if match := validates.FindStringSubmatch(text); match != nil {
+			fields := symbols(match[2])
+			if len(fields) == 0 {
+				continue
+			}
+			for _, field := range fields {
+				nodes = append(nodes, node(path, "validation", field, owner+"#validates:"+field, line, line, "ruby-associations-v1"))
+			}
+			continue
 		}
 	}
 	return nodes
+}
+
+func classOwner(stack []classFrame) string {
+	for i := len(stack) - 1; i >= 0; i-- {
+		if stack[i].isClass {
+			return stack[i].name
+		}
+	}
+	return ""
 }
 
 func headings(path string, content []byte, ext string) []Node {
@@ -114,4 +329,22 @@ func lineCount(content []byte) int {
 func lastPart(name string) string {
 	parts := strings.Split(name, "::")
 	return parts[len(parts)-1]
+}
+
+// pluralize applies a best-effort English pluralization matching common
+// Rails resource naming, e.g. resource :profile -> ProfilesController.
+func pluralize(name string) string {
+	switch {
+	case strings.HasSuffix(name, "y") && len(name) > 1 && !isVowel(name[len(name)-2]):
+		return strings.TrimSuffix(name, "y") + "ies"
+	case strings.HasSuffix(name, "s"), strings.HasSuffix(name, "x"), strings.HasSuffix(name, "z"),
+		strings.HasSuffix(name, "ch"), strings.HasSuffix(name, "sh"):
+		return name + "es"
+	default:
+		return name + "s"
+	}
+}
+
+func isVowel(b byte) bool {
+	return strings.ContainsRune("aeiouAEIOU", rune(b))
 }

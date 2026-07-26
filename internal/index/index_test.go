@@ -3,6 +3,7 @@ package index_test
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/spaquet/ida/internal/index"
@@ -19,8 +20,8 @@ func TestSyncSearchAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Files != 7 || result.Nodes != 16 {
-		t.Fatalf("Sync() = %#v; want 7 files and 16 nodes", result)
+	if result.Files != 9 || result.Nodes != 29 {
+		t.Fatalf("Sync() = %#v; want 9 files and 29 nodes", result)
 	}
 	db, err := store.OpenExisting(root)
 	if err != nil {
@@ -39,8 +40,8 @@ func TestSyncSearchAndContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	var edges int
-	if err := db.QueryRow("SELECT count(*) FROM edges").Scan(&edges); err != nil || edges != 2 {
-		t.Fatalf("edge count = %d, %v; want 2", edges, err)
+	if err := db.QueryRow("SELECT count(*) FROM edges").Scan(&edges); err != nil || edges != 6 {
+		t.Fatalf("edge count = %d, %v; want 6", edges, err)
 	}
 	path, err := query.Path(db, "GET /articles", "app/views/articles/index.html.erb", 3)
 	if err != nil || len(path.Edges) != 2 || path.Edges[0].Kind != "routes_to" || path.Edges[1].Kind != "renders" {
@@ -49,6 +50,34 @@ func TestSyncSearchAndContext(t *testing.T) {
 	impact, err := query.Impact(db, "index", 2, 10)
 	if err != nil || len(impact) != 2 {
 		t.Fatalf("Impact() = %#v, %v", impact, err)
+	}
+
+	assocEdges, err := query.Impact(db, "Article", 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(assocEdges, func(r query.Relationship) bool {
+		return r.Kind == "has_many" && r.TargetName == "Comment"
+	}) {
+		t.Fatalf("Impact(Article) missing has_many -> Comment edge: %#v", assocEdges)
+	}
+	mentionEdges, err := query.Impact(db, "Article", 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(mentionEdges, func(r query.Relationship) bool {
+		return r.Kind == "mentions" && r.TargetName == "Article"
+	}) {
+		t.Fatalf("Impact(Article) missing mentions edge from doc section: %#v", mentionEdges)
+	}
+	macroRouteEdges, err := query.Impact(db, "GET /comments/:id", 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(macroRouteEdges, func(r query.Relationship) bool {
+		return r.Kind == "routes_to" && r.TargetName == "show"
+	}) {
+		t.Fatalf("Impact(GET /comments/:id) missing routes_to edge from resources macro: %#v", macroRouteEdges)
 	}
 
 	articlePath := filepath.Join(root, "app", "models", "article.rb")
