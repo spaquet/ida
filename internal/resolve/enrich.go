@@ -15,6 +15,11 @@ import (
 const (
 	lspStartTimeout   = 30 * time.Second
 	lspRequestTimeout = 5 * time.Second
+	// lspCloseTimeout bounds the shutdown handshake so a server that never
+	// replies to "shutdown" (e.g. one that already failed initialize)
+	// can't hang the caller forever — Close falls back to killing the
+	// process once this expires.
+	lspCloseTimeout = 5 * time.Second
 )
 
 // lspIndexSettleDelay is a pragmatic wait after initialize before issuing
@@ -116,12 +121,16 @@ func enrichRuby(tx *sql.Tx, root string, command []string, generation int64) err
 	defer cancel()
 	client, err := startClient(startCtx, root, command)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ida: lsp ruby start: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ida: lsp ruby unavailable, skipping enrichment: %v\n", err)
 		return nil
 	}
-	defer func() { _ = client.Close(context.Background()) }()
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), lspCloseTimeout)
+		defer cancel()
+		_ = client.Close(closeCtx)
+	}()
 	if err := client.Initialize(startCtx, lsp.PathToURI(root)); err != nil {
-		fmt.Fprintf(os.Stderr, "ida: lsp ruby initialize: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ida: lsp ruby unavailable, skipping enrichment: %v\n", err)
 		return nil
 	}
 	time.Sleep(lspIndexSettleDelay)
@@ -189,12 +198,16 @@ func enrichTypeScript(tx *sql.Tx, root string, command []string, generation int6
 	defer cancel()
 	client, err := startClient(startCtx, root, command)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ida: lsp typescript start: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ida: lsp typescript unavailable, skipping enrichment: %v\n", err)
 		return nil
 	}
-	defer func() { _ = client.Close(context.Background()) }()
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), lspCloseTimeout)
+		defer cancel()
+		_ = client.Close(closeCtx)
+	}()
 	if err := client.Initialize(startCtx, lsp.PathToURI(root)); err != nil {
-		fmt.Fprintf(os.Stderr, "ida: lsp typescript initialize: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ida: lsp typescript unavailable, skipping enrichment: %v\n", err)
 		return nil
 	}
 	time.Sleep(lspIndexSettleDelay)

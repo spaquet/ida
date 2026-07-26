@@ -30,6 +30,7 @@ var (
 	scopeDecl   = regexp.MustCompile(`^\s*scope\s+:([a-zA-Z_][a-zA-Z0-9_]*)`)
 	broadcasts  = regexp.MustCompile(`^\s*(broadcasts_to|broadcasts_refreshes|broadcasts_refreshes_to|broadcasts|broadcast_append_to|broadcast_prepend_to|broadcast_replace_to|broadcast_remove_to|broadcast_refresh_to|broadcast_refresh_later_to)\b\s*(.*)$`)
 	firstSymbol = regexp.MustCompile(`:([a-zA-Z_][a-zA-Z0-9_]*)`)
+	keywordArg  = regexp.MustCompile(`[a-zA-Z_][a-zA-Z0-9_]*:\s`)
 
 	routeSingle    = regexp.MustCompile(`^\s*(get|post|put|patch|delete)\s+["']([^"']+)["'](?:\s*,?\s*(?:to:|=>)\s*["']([^"'#]+)#([^"']+)["'])`)
 	routeRoot      = regexp.MustCompile(`^\s*root\s+(?:to:\s*)?["']([^"'#]+)#([^"']+)["']`)
@@ -208,6 +209,25 @@ func symbols(text string) []string {
 	return result
 }
 
+// validationFields returns the positional symbol arguments of a validates
+// call, ignoring any :symbol appearing inside keyword-option values (e.g.
+// `scope: :organization_id`, `if: :confirmed?`) and de-duplicating repeats.
+func validationFields(text string) []string {
+	if loc := keywordArg.FindStringIndex(text); loc != nil {
+		text = text[:loc[0]]
+	}
+	seen := make(map[string]bool)
+	var result []string
+	for _, field := range symbols(text) {
+		if seen[field] {
+			continue
+		}
+		seen[field] = true
+		result = append(result, field)
+	}
+	return result
+}
+
 func filterActions(actions []resourceAction, only, except []string) []resourceAction {
 	if len(only) == 0 && len(except) == 0 {
 		return actions
@@ -304,7 +324,7 @@ func ruby(path string, content []byte) []Node {
 			continue
 		}
 		if match := validates.FindStringSubmatch(text); match != nil {
-			fields := symbols(match[2])
+			fields := validationFields(match[2])
 			if len(fields) == 0 {
 				continue
 			}

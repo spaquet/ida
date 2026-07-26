@@ -4,6 +4,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Added support for TypeScript 7's native `tsgo` language server
+  (`@typescript/native-preview`, `tsgo --lsp --stdio`) as the default
+  `typescript` LSP backend when the project's installed or declared
+  TypeScript version is 7 or newer; TypeScript &lt;7 projects keep using
+  `typescript-language-server --stdio` as before. An explicit `typescript`
+  entry in project config still overrides detection either way.
+- Fixed `ida watch` hanging indefinitely after a TypeScript LSP server fails
+  `initialize` (e.g. `typescript-language-server` against a TS7 project it
+  can't load): shutdown on close now runs under a bounded timeout instead of
+  `context.Background()`, so a server that never replies to `shutdown` no
+  longer blocks the watcher from starting.
+- LSP enrichment failures (missing/failed-to-start/failed-to-initialize
+  server) now log as "unavailable, skipping enrichment" instead of a raw
+  wrapped error, and `ida watch` prints a "watching ... (Ctrl+C to stop)"
+  line once it's actually running, so a skipped LSP integration reads as
+  informational rather than as a crash.
+
+## [0.4.2]
+
+- Fixed a crash (`UNIQUE constraint failed: nodes.id`) where a `validates`
+  line referencing the same symbol twice — once as a field, once inside an
+  option value such as `if: :confirmed?` — produced two identical
+  `validation` nodes; field extraction now stops at the first keyword option
+  and de-duplicates.
+- Fixed a crash (`UNIQUE constraint failed: edges.id`) where two textual
+  occurrences resolving to the same `(source, target, kind)` edge fact
+  (e.g. two associations targeting the same class) failed to insert; edge
+  IDs are deliberately content-addressed for this reason, so the insert now
+  ignores the conflict instead of erroring.
+- Fixed `ida init`/`ida sync` failing to launch a project-local
+  `typescript-language-server` (installed under `node_modules/.bin` rather
+  than on `$PATH`): `ida doctor` already resolved it there, but the resolved
+  path was discarded before spawning the process, so the server always
+  failed with "executable file not found in $PATH".
+
 ## [0.4.0]
 
 - JavaScript/TypeScript/JSX/TSX extraction via tree-sitter
