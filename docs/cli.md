@@ -40,14 +40,22 @@ accepted.
 
 ## Implemented commands
 
-### `ida init [path]`
+### `ida init [path] [--install-lsp]`
 
 Discover the Rails root, create `.ida/ida.db`, and build a complete index.
-`path` defaults to the current directory.
+`path` defaults to the current directory. With `--install-lsp`, Ida first
+detects configured, project-local, and executable Ruby and TypeScript language
+servers. For each missing server it prints the installation command and asks
+for confirmation before running it.
 
 ```sh
 ida init ~/code/my_app
+ida init --install-lsp
 ```
+
+Ruby LSP is installed with `gem install ruby-lsp`, following its composed-bundle
+model rather than editing the application Gemfile. If `package.json` exists,
+TypeScript Language Server is offered as a project development dependency.
 
 ### `ida sync [path]`
 
@@ -78,6 +86,18 @@ count, and the last indexing error. `path` defaults to the current directory.
 
 ```sh
 ida status --json
+```
+
+### `ida doctor [path]`
+
+Check Rails discovery, database accessibility, index completeness, watcher
+health, pending files, and configured or detected language servers. Missing
+optional LSPs include an installation command but do not make the deterministic
+index unavailable.
+
+```sh
+ida doctor
+ida doctor --json
 ```
 
 ### `ida scope <path>`
@@ -142,6 +162,22 @@ Traverse likely incoming and outgoing effects to depth two, returning at most
 ida impact index
 ```
 
+### `ida docs add <path|url>`
+
+Add an explicit local documentation file/directory or fetch one HTTP(S)
+document. Local sources are recorded in `ida.json` and refreshed with the
+normal index. Remote sources are stored in the local Ida database and split
+into searchable sections.
+
+```sh
+ida docs add handbook/
+ida docs add https://example.com/team-handbook.md
+```
+
+Remote fetching blocks private/local networks and credentials in URLs, follows
+at most five redirects, times out after ten seconds, and accepts at most 2 MiB
+of text. It does not crawl links or render JavaScript.
+
 ### `ida mcp [path]`
 
 Serve the seven Ida MCP tools over stdio and keep the index current with an
@@ -157,10 +193,7 @@ See [MCP reference](mcp.md) for client configuration and tool schemas.
 
 The product requirements include commands that are not implemented yet:
 
-- `ida doctor`
-- `ida docs add <path|url>`
-- `ida init --install-lsp`
 - `ida sync --rebuild` as a distinct mode
 
-Until those commands exist, the CLI returns an unknown-command or unsupported
-argument error rather than pretending the operation succeeded.
+Until that mode exists, the CLI returns an unsupported argument error rather
+than pretending the operation succeeded.

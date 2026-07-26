@@ -9,3 +9,13 @@ func TestHelpAndVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestInitArgs(t *testing.T) {
+	path, install, err := initArgs([]string{"--install-lsp", "."})
+	if err != nil || path != "." || !install {
+		t.Fatalf("initArgs() = %q, %v, %v", path, install, err)
+	}
+	if _, _, err := initArgs([]string{".", "other"}); err == nil {
+		t.Fatal("initArgs accepted two paths")
+	}
+}

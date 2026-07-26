@@ -10,7 +10,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/spaquet/ida/internal/docs"
+	"github.com/spaquet/ida/internal/doctor"
 	"github.com/spaquet/ida/internal/index"
+	"github.com/spaquet/ida/internal/lsp"
 	"github.com/spaquet/ida/internal/mcp"
 	"github.com/spaquet/ida/internal/project"
 	"github.com/spaquet/ida/internal/query"
@@ -28,16 +31,19 @@ Usage:
   ida --version
 
 Commands:
-  init [path]          Configure and build the first index
+  init [path] [--install-lsp]
+                       Configure and build the first index
   sync [path]          Reconcile the index with disk
   watch [path]         Keep the index current
   status [path]        Report index and watcher health
+  doctor [path]        Check Rails, index, watcher, and LSP health
   scope <path>         Explain whether a path is indexed
   search <query>       Search files and symbols
   context <task>       Return bounded source context
   node <name-or-id>    Explain one graph node
   path <from> <to>     Find a relationship path
   impact <name-or-id>  Show likely change effects
+  docs add <path|url>  Add an explicit documentation source
   mcp [path]           Serve MCP over stdio
 
 Options:
@@ -78,7 +84,27 @@ func run(args []string) error {
 	}
 
 	switch args[0] {
-	case "init", "sync":
+	case "init":
+		path, installLSP, err := initArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		root, err := project.Discover(path)
+		if err != nil {
+			return err
+		}
+		result, err := index.Sync(root)
+		if err != nil {
+			return err
+		}
+		if err := printValue(result, jsonOutput); err != nil {
+			return err
+		}
+		if installLSP {
+			_, err = lsp.InstallMissing(context.Background(), root, os.Stdin, os.Stderr)
+		}
+		return err
+	case "sync":
 		root, err := project.Discover(arg(args, 1, "."))
 		if err != nil {
 			return err
@@ -124,6 +150,48 @@ func run(args []string) error {
 			return err
 		}
 		return printValue(status, jsonOutput)
+	case "doctor":
+		root, err := project.Discover(arg(args, 1, "."))
+		if err != nil {
+			return err
+		}
+		return printValue(doctor.Run(root), jsonOutput)
+	case "docs":
+		if len(args) != 3 || args[1] != "add" {
+			return errors.New("usage: ida docs add <path|url>")
+		}
+		root, err := project.Discover(".")
+		if err != nil {
+			return err
+		}
+		source := args[2]
+		if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+			result, err := docs.AddRemote(context.Background(), root, source)
+			if err != nil {
+				return err
+			}
+			if _, err := project.AddDocumentSource(root, result.Source); err != nil {
+				return err
+			}
+			return printValue(result, jsonOutput)
+		}
+		source, err = project.AddDocumentSource(root, source)
+		if err != nil {
+			return err
+		}
+		if _, err := index.Sync(root); err != nil {
+			return err
+		}
+		db, err := store.OpenExisting(root)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		result, err := docs.LocalResult(db, source)
+		if err != nil {
+			return err
+		}
+		return printValue(result, jsonOutput)
 	case "scope":
 		if len(args) < 2 {
 			return errors.New("usage: ida scope <path>")
@@ -206,6 +274,23 @@ func arg(args []string, i int, fallback string) string {
 	return fallback
 }
 
+func initArgs(args []string) (string, bool, error) {
+	path := "."
+	pathSet := false
+	installLSP := false
+	for _, value := range args {
+		if value == "--install-lsp" {
+			installLSP = true
+		} else if !pathSet {
+			path = value
+			pathSet = true
+		} else {
+			return "", false, errors.New("usage: ida init [path] [--install-lsp]")
+		}
+	}
+	return path, installLSP, nil
+}
+
 func printValue(v any, asJSON bool) error {
 	if asJSON {
 		enc := json.NewEncoder(os.Stdout)
@@ -226,6 +311,22 @@ func printValue(v any, asJSON bool) error {
 		for _, path := range value.PendingFiles {
 			fmt.Printf("pending file: %s\n", path)
 		}
+	case doctor.Report:
+		for _, check := range value.Checks {
+			fmt.Printf("%s: %s (%s)\n", check.Name, check.Status, check.Detail)
+		}
+		for _, server := range value.LSP {
+			fmt.Printf("lsp %s: %s", server.Name, server.Status)
+			if len(server.Command) > 0 {
+				fmt.Printf(" (%s)", strings.Join(server.Command, " "))
+			}
+			fmt.Println()
+			if len(server.InstallCommand) > 0 {
+				fmt.Printf("  install: %s\n", strings.Join(server.InstallCommand, " "))
+			}
+		}
+	case docs.Result:
+		fmt.Printf("added %s documentation %s (%d sections)\n", value.Type, value.Source, value.Sections)
 	case project.Decision:
 		fmt.Printf("%s: %s (%s)\n", value.Path, map[bool]string{true: "included", false: "excluded"}[value.Included], value.Reason)
 	case []store.SearchResult:

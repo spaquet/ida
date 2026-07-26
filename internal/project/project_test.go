@@ -56,3 +56,22 @@ func TestDiscoveryAndScope(t *testing.T) {
 		}
 	}
 }
+
+func TestAddDocumentSource(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "handbook")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source, err := AddDocumentSource(root, path)
+	if err != nil || source != "handbook/**" {
+		t.Fatalf("AddDocumentSource() = %q, %v", source, err)
+	}
+	config, err := LoadConfig(root)
+	if err != nil || len(config.Docs) != 1 || config.Docs[0] != source {
+		t.Fatalf("LoadConfig() = %#v, %v", config, err)
+	}
+	if _, err := AddDocumentSource(root, filepath.Dir(root)); err == nil {
+		t.Fatal("AddDocumentSource accepted a path outside the project")
+	}
+}

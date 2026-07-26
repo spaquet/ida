@@ -67,16 +67,27 @@ func Search(db *store.DB, term string, limit int) ([]store.SearchResult, error) 
 	}
 	like := "%" + store.EscapeLike(strings.ToLower(term)) + "%"
 	rows, err := db.Query(`
-SELECT n.id, n.kind, n.name, n.qualified_name, f.path, n.start_line, n.end_line,
-       f.content_hash, n.confidence, n.extractor
-FROM nodes n JOIN files f ON f.id = n.file_id
-WHERE lower(n.name) LIKE ? ESCAPE '\' OR lower(n.qualified_name) LIKE ? ESCAPE '\' OR lower(f.path) LIKE ? ESCAPE '\'
+WITH candidates AS (
+  SELECT n.id, n.kind, n.name, n.qualified_name, f.path, n.start_line, n.end_line,
+         f.content_hash, n.confidence, n.extractor, '' AS search_text
+  FROM nodes n JOIN files f ON f.id = n.file_id
+  WHERE n.kind <> 'document_section'
+  UNION ALL
+  SELECT s.id, 'document_section', s.heading_path, d.source || '#' || s.heading_path,
+         d.source, s.start_line, s.end_line, d.content_hash, 'exact', 'document-sections-v1', s.body
+  FROM document_sections s JOIN documents d ON d.id = s.document_id
+)
+SELECT id, kind, name, qualified_name, path, start_line, end_line,
+       content_hash, confidence, extractor
+FROM candidates
+WHERE lower(name) LIKE ? ESCAPE '\' OR lower(qualified_name) LIKE ? ESCAPE '\'
+   OR lower(path) LIKE ? ESCAPE '\' OR lower(search_text) LIKE ? ESCAPE '\'
 ORDER BY CASE
-  WHEN lower(n.qualified_name) = lower(?) THEN 0
-  WHEN lower(n.name) = lower(?) THEN 1
-  WHEN lower(n.name) LIKE ? ESCAPE '\' THEN 2
-  ELSE 3 END, f.path, n.start_line
-LIMIT ?`, like, like, like, term, term, store.EscapeLike(strings.ToLower(term))+"%", limit)
+  WHEN lower(qualified_name) = lower(?) THEN 0
+  WHEN lower(name) = lower(?) THEN 1
+  WHEN lower(name) LIKE ? ESCAPE '\' THEN 2
+  ELSE 3 END, path, start_line
+LIMIT ?`, like, like, like, like, term, term, store.EscapeLike(strings.ToLower(term))+"%", limit)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +124,19 @@ func Context(db *store.DB, root, task string, fileLimit, byteLimit int) (Context
 			break
 		}
 		seen[result.Path] = true
+		if strings.HasPrefix(result.Path, "http://") || strings.HasPrefix(result.Path, "https://") {
+			body, truncated, err := remoteSection(db, result.ID, remaining)
+			if err != nil {
+				return output, err
+			}
+			output.Truncated = output.Truncated || truncated
+			remaining -= len(body)
+			output.Files = append(output.Files, ContextFile{
+				Path: result.Path, StartLine: result.StartLine, EndLine: result.EndLine,
+				Excerpt: body, Confidence: result.Confidence,
+			})
+			continue
+		}
 		content, err := readInside(root, result.Path)
 		if err != nil {
 			return output, err
@@ -157,6 +181,24 @@ func Context(db *store.DB, root, task string, fileLimit, byteLimit int) (Context
 		}
 	}
 	return output, nil
+}
+
+func remoteSection(db *store.DB, id string, byteLimit int) (string, bool, error) {
+	var body string
+	var start int
+	if err := db.QueryRow("SELECT body, start_line FROM document_sections WHERE id = ?", id).Scan(&body, &start); err != nil {
+		return "", false, err
+	}
+	var excerpt strings.Builder
+	for i, line := range strings.Split(body, "\n") {
+		fmt.Fprintf(&excerpt, "%4d | %s\n", start+i, line)
+	}
+	text := excerpt.String()
+	truncated := len(text) > byteLimit
+	if len(text) > byteLimit {
+		text = text[:byteLimit]
+	}
+	return text, truncated, nil
 }
 
 func Node(db *store.DB, nameOrID string) (NodeResult, error) {

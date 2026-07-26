@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/spaquet/ida/internal/docs"
 	"github.com/spaquet/ida/internal/extract"
 	"github.com/spaquet/ida/internal/project"
 	"github.com/spaquet/ida/internal/resolve"
@@ -69,6 +70,9 @@ func Sync(root string) (result Result, err error) {
 		}
 		result.Files++
 		result.Nodes += nodes
+	}
+	if err = docs.ReplaceLocal(tx, root, paths); err != nil {
+		return result, err
 	}
 	if err = resolve.All(tx, result.Generation); err != nil {
 		return result, err
@@ -138,6 +142,14 @@ func Refresh(root string, changed []string) (result Result, err error) {
 		}
 		result.Files++
 		result.Nodes += nodes
+	}
+	// ponytail: local docs are small; rescan them until incremental doc refresh is measured as a problem.
+	docPaths, scanErr := scope.Files()
+	if scanErr != nil {
+		return result, scanErr
+	}
+	if err = docs.ReplaceLocal(tx, root, docPaths); err != nil {
+		return result, err
 	}
 	if err = resolve.All(tx, result.Generation); err != nil {
 		return result, err

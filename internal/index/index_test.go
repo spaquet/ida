@@ -19,8 +19,8 @@ func TestSyncSearchAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Files != 6 || result.Nodes != 14 {
-		t.Fatalf("Sync() = %#v; want 6 files and 14 nodes", result)
+	if result.Files != 7 || result.Nodes != 16 {
+		t.Fatalf("Sync() = %#v; want 7 files and 16 nodes", result)
 	}
 	db, err := store.OpenExisting(root)
 	if err != nil {
@@ -32,7 +32,7 @@ func TestSyncSearchAndContext(t *testing.T) {
 		t.Fatalf("Search() = %#v, %v; want one result", results, err)
 	}
 	context, err := query.Context(db, root, "publish", 5, 12_000)
-	if err != nil || len(context.Files) != 1 || context.Files[0].Path != "app/models/article.rb" {
+	if err != nil || len(context.Files) == 0 || context.Files[0].Path != "app/models/article.rb" {
 		t.Fatalf("Context() = %#v, %v", context, err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".ida", "ida.db")); err != nil {
@@ -60,5 +60,8 @@ func TestSyncSearchAndContext(t *testing.T) {
 	}
 	if results, err := query.Search(db, "Story", 10); err != nil || len(results) != 1 {
 		t.Fatalf("Search(Story) = %#v, %v", results, err)
+	}
+	if results, err := query.Search(db, "release sentinel", 10); err != nil || len(results) != 1 || results[0].Path != "docs/guide.md" {
+		t.Fatalf("Search(document body) = %#v, %v", results, err)
 	}
 }

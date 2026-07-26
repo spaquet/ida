@@ -137,6 +137,23 @@ CREATE TABLE IF NOT EXISTS watcher_status (
   updated_at TEXT NOT NULL DEFAULT ''
 );
 INSERT OR IGNORE INTO watcher_status (id) VALUES (1);
+CREATE TABLE IF NOT EXISTS documents (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL UNIQUE,
+  source_type TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  title TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS document_sections (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+  heading_path TEXT NOT NULL,
+  body TEXT NOT NULL,
+  start_line INTEGER NOT NULL,
+  end_line INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS document_sections_document_id ON document_sections(document_id);
 `)
 	return err
 }
