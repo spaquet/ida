@@ -2,25 +2,6 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
-
-- Added support for TypeScript 7's native `tsgo` language server
-  (`@typescript/native-preview`, `tsgo --lsp --stdio`) as the default
-  `typescript` LSP backend when the project's installed or declared
-  TypeScript version is 7 or newer; TypeScript &lt;7 projects keep using
-  `typescript-language-server --stdio` as before. An explicit `typescript`
-  entry in project config still overrides detection either way.
-- Fixed `ida watch` hanging indefinitely after a TypeScript LSP server fails
-  `initialize` (e.g. `typescript-language-server` against a TS7 project it
-  can't load): shutdown on close now runs under a bounded timeout instead of
-  `context.Background()`, so a server that never replies to `shutdown` no
-  longer blocks the watcher from starting.
-- LSP enrichment failures (missing/failed-to-start/failed-to-initialize
-  server) now log as "unavailable, skipping enrichment" instead of a raw
-  wrapped error, and `ida watch` prints a "watching ... (Ctrl+C to stop)"
-  line once it's actually running, so a skipped LSP integration reads as
-  informational rather than as a crash.
-
 ## [0.4.2]
 
 - Fixed a crash (`UNIQUE constraint failed: nodes.id`) where a `validates`
@@ -38,6 +19,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   than on `$PATH`): `ida doctor` already resolved it there, but the resolved
   path was discarded before spawning the process, so the server always
   failed with "executable file not found in $PATH".
+- Added support for TypeScript 7's native `tsgo` language server
+  (`@typescript/native-preview`, `tsgo --lsp --stdio`) as the default
+  `typescript` LSP backend when the project's installed or declared
+  TypeScript version is 7 or newer; TypeScript &lt;7 projects keep using
+  `typescript-language-server --stdio` as before. An explicit `typescript`
+  entry in project config still overrides detection either way.
+- Fixed `ida watch` hanging indefinitely after a TypeScript LSP server fails
+  `initialize` (e.g. `typescript-language-server` against a TS7 project it
+  can't load): shutdown on close now runs under a bounded timeout instead of
+  `context.Background()`, so a server that never replies to `shutdown` no
+  longer blocks the watcher from starting.
+- LSP enrichment failures (missing/failed-to-start/failed-to-initialize
+  server) now log as "unavailable, skipping enrichment" instead of a raw
+  wrapped error, and `ida watch` prints a "watching ... (Ctrl+C to stop)"
+  line once it's actually running, so a skipped LSP integration reads as
+  informational rather than as a crash.
 
 ## [0.4.0]
 

@@ -106,7 +106,7 @@ func handle(root string, db *store.DB, request request) (any, *rpcError) {
 		return map[string]any{
 			"protocolVersion": "2025-06-18",
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
-			"serverInfo":      map[string]any{"name": "ida", "version": "0.4.0"},
+			"serverInfo":      map[string]any{"name": "ida", "version": "0.4.2"},
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
