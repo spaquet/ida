@@ -44,7 +44,33 @@ var (
 
 	heading  = regexp.MustCompile(`^(#{1,6})\s+(.+?)\s*$`)
 	adocHead = regexp.MustCompile(`^(={1,6})\s+(.+?)\s*$`)
+
+	classCallDirect = regexp.MustCompile(`\b((?:[A-Z][A-Za-z0-9_]*::)*[A-Z][A-Za-z0-9_]*)\.([a-z_][A-Za-z0-9_]*[!?]?)\b`)
+	classCallViaNew = regexp.MustCompile(`\b((?:[A-Z][A-Za-z0-9_]*::)*[A-Z][A-Za-z0-9_]*)\.new\b(?:\([^)]*\))?\s*\.\s*([a-z_][A-Za-z0-9_]*[!?]?)\b`)
 )
+
+// methodCallUses scans one line of Ruby for `Receiver.method(...)` and
+// `Receiver.new(...).method(...)` calls on a constant-named receiver,
+// recorded as a method_call_use node regardless of whether Receiver turns
+// out to be a project class, a Rails/gem class, or a false positive from a
+// bare `Constant.method` reference — resolution narrows it down later.
+// `.new` alone is skipped: it names no behavior of its own, only the chained
+// call after it (or a bare Receiver.method elsewhere) is meaningful.
+func methodCallUses(path, text string, line int) []Node {
+	var nodes []Node
+	for _, m := range classCallViaNew.FindAllStringSubmatch(text, -1) {
+		qualified := m[1] + "#" + m[2]
+		nodes = append(nodes, node(path, "method_call_use", m[2], qualified, line, line, "method-calls-v1"))
+	}
+	for _, m := range classCallDirect.FindAllStringSubmatch(text, -1) {
+		if m[2] == "new" {
+			continue
+		}
+		qualified := m[1] + "#" + m[2]
+		nodes = append(nodes, node(path, "method_call_use", m[2], qualified, line, line, "method-calls-v1"))
+	}
+	return nodes
+}
 
 type resourceAction struct {
 	name       string
@@ -314,6 +340,7 @@ func ruby(path string, content []byte) []Node {
 		indent := len(text) - len(strings.TrimLeft(text, " \t"))
 
 		nodes = append(nodes, renderUses(path, text, line, false)...)
+		nodes = append(nodes, methodCallUses(path, text, line)...)
 
 		if trimmed == "end" {
 			if len(stack) > 0 && indent <= stack[len(stack)-1].indent {

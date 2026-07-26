@@ -14,6 +14,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added `ida unused partial` / `ida unused view_component` (MCP tool
   `ida_unused`) to list partials/components with no resolved incoming
   render edge.
+- Added one-hop Ruby class-method call resolution: `Receiver.method(...)`
+  and `Receiver.new(...).method(...)` calls resolve to a `calls` edge when
+  `Receiver` uniquely names a project class and its file declares exactly
+  one method with that name, letting `ida impact`/`ida node` on a
+  service/method surface which controllers (or anything else) call it.
 
 ## [0.4.2]
 

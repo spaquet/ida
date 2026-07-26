@@ -283,6 +283,53 @@ func TestResolveViewComponents(t *testing.T) {
 	}
 }
 
+func TestResolveCallsControllerToService(t *testing.T) {
+	db := open(t)
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	controllerFile := insertFile(t, tx, "app/controllers/articles_controller.rb")
+	serviceFile := insertFile(t, tx, "app/services/notify_user_service.rb")
+	insertNode(t, tx, "svc", serviceFile, "class", "NotifyUserService", "NotifyUserService", 1)
+	insertNode(t, tx, "callMethod", serviceFile, "method", "call", "self.call", 2)
+	insertNode(t, tx, "use1", controllerFile, "method_call_use", "call", "NotifyUserService#call", 3)
+	if err := resolve.All(tx, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if got := edgeTarget(t, db, "calls"); got != "callMethod" {
+		t.Fatalf("calls target = %q; want callMethod", got)
+	}
+}
+
+func TestResolveCallsAmbiguousMethodOmitted(t *testing.T) {
+	db := open(t)
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	controllerFile := insertFile(t, tx, "app/controllers/articles_controller.rb")
+	serviceFile := insertFile(t, tx, "app/services/notify_user_service.rb")
+	insertNode(t, tx, "svc", serviceFile, "class", "NotifyUserService", "NotifyUserService", 1)
+	insertNode(t, tx, "callMethod1", serviceFile, "method", "call", "call", 2)
+	insertNode(t, tx, "callMethod2", serviceFile, "method", "call", "call", 6)
+	insertNode(t, tx, "use1", controllerFile, "method_call_use", "call", "NotifyUserService#call", 3)
+	if err := resolve.All(tx, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range edgeKinds(t, db) {
+		if kind == "calls" {
+			t.Fatalf("expected no calls edge for an ambiguous (redefined) method, got one")
+		}
+	}
+}
+
 func TestResolveTailwindFansOutToMultipleFiles(t *testing.T) {
 	db := open(t)
 	tx, err := db.Begin()

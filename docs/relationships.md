@@ -255,6 +255,32 @@ design token legitimately fans out to many files, and each edge is
 independently verified rather than chosen between competing candidates.
 Individual built-in utility classes never become their own nodes.
 
+## Ruby class-method calls
+
+Any `Receiver.method(...)` or `Receiver.new(...).method(...)` call in a `.rb`
+file, where `Receiver` is a capitalized (optionally namespaced) constant,
+becomes a `method_call_use` node — regardless of whether `Receiver` turns out
+to be a project class, a Rails/gem class, or a false positive from an
+unrelated `Constant.method` reference; resolution narrows it down. Bare
+`Receiver.new` alone is not recorded: it names no behavior of its own, only
+the chained call after it (or a separate `Receiver.method` elsewhere) is.
+
+It resolves to a `calls` edge, at `convention` confidence, only when
+`Receiver`'s unqualified name (the same matching `has_many`/`belongs_to`
+associations use) names exactly one project class, and that class's own file
+declares exactly one method with the called name — no distinction is made
+between an instance method and a `self.`-qualified class method, so a
+service object exposing both `self.call` and an instance `call` (the common
+`Foo.call` → `new(...).call` delegation pattern) makes that name ambiguous
+and the edge is omitted.
+
+This is not a full Ruby call graph: it is one hop, convention-resolved, and
+only from a capitalized constant receiver. A local variable or instance
+`@service.call`, method calls chained more than one level deep, and calls
+inside interpolated strings or comments are not tracked. Use `ida search
+<ServiceName>` for a broader text match, and `ida impact <ServiceName>`/
+`ida impact <method>` to see whatever `calls` edges did resolve.
+
 ## Document mentions
 
 Every document section's explicit code-symbol mentions (backtick-quoted spans

@@ -40,6 +40,9 @@ func All(tx *sql.Tx, generation int64) error {
 	if err := resolveViewComponents(tx, generation); err != nil {
 		return err
 	}
+	if err := resolveCalls(tx, generation); err != nil {
+		return err
+	}
 	return resolveTailwind(tx, generation)
 }
 
@@ -730,6 +733,79 @@ func resolveViewComponents(tx *sql.Tx, generation int64) error {
 func lastPart(name string) string {
 	parts := strings.Split(name, "::")
 	return parts[len(parts)-1]
+}
+
+// resolveCalls links a `Receiver.method(...)`/`Receiver.new(...).method(...)`
+// use to the method it names, when Receiver uniquely names one project class
+// (by its unqualified name, the same matching resolveAssociations uses) and
+// that class's file declares exactly one method with the matching name.
+// Calls to Rails/gem classes that never became a class node, or to a method
+// name declared in more than one place in the receiver's own file, are left
+// unresolved rather than guessed.
+func resolveCalls(tx *sql.Tx, generation int64) error {
+	uses, err := sourceRows(tx, "method_call_use")
+	if err != nil {
+		return err
+	}
+	for _, use := range uses {
+		receiver, method, ok := strings.Cut(use.value, "#")
+		if !ok {
+			continue
+		}
+		_, classFileID, count, err := uniqueClassNode(tx, lastPart(receiver))
+		if err != nil {
+			return err
+		}
+		if count != 1 {
+			continue
+		}
+		methodID, count, err := uniqueMethodInFile(tx, classFileID, method)
+		if err != nil {
+			return err
+		}
+		if count != 1 {
+			continue
+		}
+		if err := insertEdge(tx, use.id, methodID, "calls", "convention", use.fileID, use.line, use.value, generation); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func uniqueClassNode(tx *sql.Tx, name string) (string, int64, int, error) {
+	rows, err := tx.Query(`SELECT id, file_id FROM nodes WHERE kind = 'class' AND name = ? LIMIT 2`, name)
+	if err != nil {
+		return "", 0, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var id string
+	var fileID int64
+	count := 0
+	for rows.Next() {
+		if err := rows.Scan(&id, &fileID); err != nil {
+			return "", 0, 0, err
+		}
+		count++
+	}
+	return id, fileID, count, rows.Err()
+}
+
+func uniqueMethodInFile(tx *sql.Tx, fileID int64, name string) (string, int, error) {
+	rows, err := tx.Query(`SELECT id FROM nodes WHERE kind = 'method' AND file_id = ? AND name = ? LIMIT 2`, fileID, name)
+	if err != nil {
+		return "", 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var id string
+	count := 0
+	for rows.Next() {
+		if err := rows.Scan(&id); err != nil {
+			return "", 0, err
+		}
+		count++
+	}
+	return id, count, rows.Err()
 }
 
 // tailwindUtilitySuffixes are the Tailwind class-name segments a custom

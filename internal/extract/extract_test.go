@@ -117,6 +117,35 @@ end
 	}
 }
 
+func TestMethodCallUses(t *testing.T) {
+	content := []byte(`class ArticlesController < ApplicationController
+  def create
+    NotifyUserService.call(current_user)
+    ExportService.new(current_user).perform
+    ExportService.new
+    other_helper.foo
+  end
+end
+`)
+	nodes := File("app/controllers/articles_controller.rb", content)
+	calls := nodeByKind(nodes, "method_call_use")
+	got := make(map[string]bool)
+	for _, c := range calls {
+		got[c.QualifiedName] = true
+	}
+	for _, want := range []string{"NotifyUserService#call", "ExportService#perform"} {
+		if !got[want] {
+			t.Errorf("missing %q in %#v", want, calls)
+		}
+	}
+	if got["ExportService#new"] {
+		t.Errorf("bare .new should not itself become a method_call_use: %#v", calls)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("method_call_use = %#v; want exactly 2 (call, perform)", calls)
+	}
+}
+
 func TestAssociationsValidationsAndScopes(t *testing.T) {
 	content := []byte(`class Article < ApplicationRecord
   belongs_to :author
