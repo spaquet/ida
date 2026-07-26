@@ -123,6 +123,9 @@ not required.
 
 ### Resolution
 
+See [Relationship resolution](relationships.md) for the exact subset currently
+implemented and its deliberate omissions.
+
 Resolution runs after extraction. It prefers evidence in this order:
 
 1. direct syntax/configuration;

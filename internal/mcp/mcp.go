@@ -120,13 +120,14 @@ func handle(root string, request request) (any, *rpcError) {
 		if err != nil {
 			return map[string]any{"content": []any{map[string]any{"type": "text", "text": err.Error()}}, "isError": true}, nil
 		}
-		data, err := json.Marshal(value)
+		structured := map[string]any{"result": value}
+		data, err := json.Marshal(structured)
 		if err != nil {
 			return nil, internal(err)
 		}
 		return map[string]any{
 			"content":           []any{map[string]any{"type": "text", "text": string(data)}},
-			"structuredContent": value,
+			"structuredContent": structured,
 		}, nil
 	default:
 		return nil, &rpcError{Code: -32601, Message: "method not found"}
@@ -146,6 +147,11 @@ func callTool(root, name string, arguments json.RawMessage) (any, error) {
 		}
 		if len(input.Paths) > 1000 {
 			return nil, errors.New("too many paths")
+		}
+		for _, path := range input.Paths {
+			if err := validateString(path); err != nil {
+				return nil, err
+			}
 		}
 		return index.Refresh(root, input.Paths)
 	}
@@ -195,6 +201,9 @@ func callTool(root, name string, arguments json.RawMessage) (any, error) {
 		if err := decode(arguments, &input); err != nil {
 			return nil, err
 		}
+		if err := validateString(input.Name); err != nil {
+			return nil, err
+		}
 		return query.Node(db, input.Name)
 	case "ida_path":
 		var input struct {
@@ -203,6 +212,12 @@ func callTool(root, name string, arguments json.RawMessage) (any, error) {
 			Depth int    `json:"depth"`
 		}
 		if err := decode(arguments, &input); err != nil {
+			return nil, err
+		}
+		if err := validateString(input.From); err != nil {
+			return nil, err
+		}
+		if err := validateString(input.To); err != nil {
 			return nil, err
 		}
 		if input.Depth == 0 {
@@ -216,6 +231,9 @@ func callTool(root, name string, arguments json.RawMessage) (any, error) {
 			Limit int    `json:"limit"`
 		}
 		if err := decode(arguments, &input); err != nil {
+			return nil, err
+		}
+		if err := validateString(input.Name); err != nil {
 			return nil, err
 		}
 		if input.Depth == 0 {
@@ -237,6 +255,16 @@ func decode(data json.RawMessage, target any) error {
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()
 	return decoder.Decode(target)
+}
+
+func validateString(value string) error {
+	if value == "" {
+		return errors.New("string input must not be empty")
+	}
+	if len(value) > 1000 {
+		return errors.New("string input exceeds 1000 bytes")
+	}
+	return nil
 }
 
 func object(properties map[string]any, required []string) map[string]any {

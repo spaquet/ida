@@ -32,7 +32,7 @@ connects the two.
 ida init .
 ida status
 ida context "How does a comment update reach the browser?"
-ida impact Comment#publish
+ida impact publish
 ida mcp
 ```
 
@@ -64,6 +64,9 @@ No UI, embeddings, cloud account, or LLM is required.
 
 - [Product requirements](docs/product-requirements.md)
 - [Architecture](docs/architecture.md)
+- [CLI reference](docs/cli.md)
+- [MCP reference](docs/mcp.md)
+- [Relationship resolution](docs/relationships.md)
 - [Coding-agent guidance](AGENTS.md)
 
 ## Planned development

@@ -44,10 +44,17 @@ func TestProtocolStdout(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
-	for _, line := range lines {
+	for i, line := range lines {
 		var response map[string]any
 		if err := json.Unmarshal([]byte(line), &response); err != nil || response["jsonrpc"] != "2.0" {
 			t.Fatalf("invalid protocol line %q: %v", line, err)
+		}
+		if i == 2 {
+			result := response["result"].(map[string]any)
+			structured := result["structuredContent"].(map[string]any)
+			if _, ok := structured["result"]; !ok {
+				t.Fatalf("structuredContent = %#v", structured)
+			}
 		}
 	}
 }

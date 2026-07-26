@@ -195,6 +195,10 @@ status; they do not make the graph unavailable.
 
 ### CLI
 
+The implemented command behavior is documented in the
+[CLI reference](cli.md). The list below is the first-release target and includes
+commands that may still be planned.
+
 The first release must provide:
 
 ```text
@@ -216,6 +220,9 @@ Read commands must support `--json`. Human output goes to stdout, diagnostics to
 stderr, and MCP mode must reserve stdout for protocol messages.
 
 ### MCP
+
+The implemented transport, tool inputs, defaults, and examples are documented
+in the [MCP reference](mcp.md).
 
 The MCP server must expose the same core operations with stable schemas:
 
