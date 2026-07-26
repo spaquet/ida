@@ -63,6 +63,18 @@ end
 	}
 }
 
+func TestTurboBroadcast(t *testing.T) {
+	content := []byte(`class Article < ApplicationRecord
+  broadcasts_to :article
+end
+`)
+	nodes := File("app/models/article.rb", content)
+	got := nodeByKind(nodes, "turbo_broadcast")
+	if len(got) != 1 || got[0].QualifiedName != "Article#broadcasts_to" {
+		t.Fatalf("turbo_broadcast = %#v; want Article#broadcasts_to", got)
+	}
+}
+
 func TestAssociationsValidationsAndScopes(t *testing.T) {
 	content := []byte(`class Article < ApplicationRecord
   belongs_to :author

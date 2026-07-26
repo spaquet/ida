@@ -4,6 +4,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0]
+
+- JavaScript/TypeScript/JSX/TSX extraction via tree-sitter
+  (`github.com/tree-sitter/go-tree-sitter` plus the pinned JS, TypeScript,
+  and CSS grammars): modules/imports, top-level function/class/const
+  declarations, a heuristic React component/hook subset, and JSX
+  component-usage sites.
+- Stimulus: controller identifier, `static targets/values/classes/outlets`,
+  and action/lifecycle methods extracted from `controllers/*_controller.js`;
+  `data-controller`/`data-action` template attributes resolve to the
+  matching controller and action at `convention` confidence.
+- Turbo: `broadcasts_to`/`broadcasts`/`broadcast_*_to` model macros,
+  `turbo_frame_tag`/`<turbo-frame>`, and `turbo_stream_from` are recorded as
+  searchable nodes (not yet resolved to edges — see docs/relationships.md).
+- React: relative `import` specifiers resolve to their target file
+  (`imports`), JSX component usage resolves to its same-file or
+  cross-file-imported declaration (`jsx_renders`), and `react_component(...)`
+  Ruby/ERB helper calls resolve to the uniquely named component (`mounts`).
+- Tailwind CSS: `theme.extend.*` tokens in `tailwind.config.js`/`.ts`
+  resolve to every template, JSX/TSX component, or CSS `@apply` rule whose
+  static class list uses them (`tailwind_uses`); dynamically constructed
+  class values are skipped rather than guessed at, and individual utility
+  classes never become nodes.
+
 ## [0.3.0]
 
 - `ida mcp config [agent...]` prints ready-to-use MCP configuration snippets
