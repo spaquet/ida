@@ -4,6 +4,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.2]
+
+- Fixed a crash (`UNIQUE constraint failed: nodes.id`) where a `validates`
+  line referencing the same symbol twice — once as a field, once inside an
+  option value such as `if: :confirmed?` — produced two identical
+  `validation` nodes; field extraction now stops at the first keyword option
+  and de-duplicates.
+- Fixed a crash (`UNIQUE constraint failed: edges.id`) where two textual
+  occurrences resolving to the same `(source, target, kind)` edge fact
+  (e.g. two associations targeting the same class) failed to insert; edge
+  IDs are deliberately content-addressed for this reason, so the insert now
+  ignores the conflict instead of erroring.
+- Fixed `ida init`/`ida sync` failing to launch a project-local
+  `typescript-language-server` (installed under `node_modules/.bin` rather
+  than on `$PATH`): `ida doctor` already resolved it there, but the resolved
+  path was discarded before spawning the process, so the server always
+  failed with "executable file not found in $PATH".
+
 ## [0.4.0]
 
 - JavaScript/TypeScript/JSX/TSX extraction via tree-sitter

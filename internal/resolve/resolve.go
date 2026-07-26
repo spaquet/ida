@@ -314,7 +314,7 @@ WHERE n.kind = 'file' AND f.path LIKE ? ESCAPE '\' LIMIT 2`, escapeLike(prefix)+
 func insertEdge(tx *sql.Tx, source, target, kind, confidence string, fileID int64, line int, evidence string, generation int64) error {
 	sum := sha256.Sum256([]byte(source + "\x00" + target + "\x00" + kind))
 	_, err := tx.Exec(`
-INSERT INTO edges(id, source_id, target_id, kind, confidence, file_id, start_line, evidence, generation)
+INSERT OR IGNORE INTO edges(id, source_id, target_id, kind, confidence, file_id, start_line, evidence, generation)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		hex.EncodeToString(sum[:]), source, target, kind, confidence, fileID, line, evidence, generation)
 	return err

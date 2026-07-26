@@ -77,31 +77,38 @@ func detect(root, name string, configured, fallback, install []string) Server {
 		command = fallback
 	}
 	server := Server{Name: name, Status: "missing", Command: command, InstallCommand: install}
-	if len(command) > 0 && executable(root, command[0]) {
-		server.Status = "available"
-		server.InstallCommand = nil
+	if len(command) > 0 {
+		if resolved, ok := executable(root, command[0]); ok {
+			server.Status = "available"
+			server.InstallCommand = nil
+			server.Command = append([]string{resolved}, command[1:]...)
+		}
 	}
 	return server
 }
 
-func executable(root, name string) bool {
+// executable resolves name to a runnable path, checking (in order) an
+// absolute path, a root-relative path, $PATH, and the project's
+// node_modules/.bin — since a project-local LSP server is never on $PATH.
+func executable(root, name string) (string, bool) {
 	if filepath.IsAbs(name) {
 		info, err := os.Stat(name)
-		return err == nil && !info.IsDir()
+		return name, err == nil && !info.IsDir()
 	}
 	if strings.ContainsAny(name, `/\`) {
-		info, err := os.Stat(filepath.Join(root, name))
-		return err == nil && !info.IsDir()
+		path := filepath.Join(root, name)
+		info, err := os.Stat(path)
+		return path, err == nil && !info.IsDir()
 	}
-	if _, err := exec.LookPath(name); err == nil {
-		return true
+	if path, err := exec.LookPath(name); err == nil {
+		return path, true
 	}
 	local := filepath.Join(root, "node_modules", ".bin", name)
 	if runtime.GOOS == "windows" {
 		local += ".cmd"
 	}
 	info, err := os.Stat(local)
-	return err == nil && !info.IsDir()
+	return local, err == nil && !info.IsDir()
 }
 
 func typescriptInstall(root string) []string {
