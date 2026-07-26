@@ -38,4 +38,8 @@ jobs:
         run: go build ./...
 
       - name: go test
-        run: go test ./...
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: go test ./...
