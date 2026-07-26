@@ -27,6 +27,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   static class list uses them (`tailwind_uses`); dynamically constructed
   class values are skipped rather than guessed at, and individual utility
   classes never become nodes.
+- Optional LSP enrichment: a JSON-RPC-over-stdio client (`internal/lsp`)
+  talks to `ruby-lsp`/`typescript-language-server` when available, filling
+  gaps deterministic resolution left unresolved (unresolved associations,
+  `js_import`, `jsx_use`) via `textDocument/definition`, at a new `lsp`
+  confidence tier. Strictly additive and best-effort: a missing/failed
+  server never fails an index. Runs only on a full `ida sync`, not on
+  watch-triggered incremental refreshes.
 
 ## [0.3.0]
 

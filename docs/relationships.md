@@ -12,6 +12,19 @@ roadmap.
 
 - `exact` means the fact is directly present in source syntax.
 - `convention` means one unique target follows a Rails naming convention.
+- `lsp` means an available LSP server (`ruby-lsp`, `typescript-language-server`)
+  resolved a `textDocument/definition` request to exactly one already-indexed
+  node, after deterministic resolution left the node unresolved. LSP
+  enrichment is additive and best-effort: a missing server, a failed
+  request, a timeout, or an ambiguous (zero/multiple-location) result never
+  produces an edge and never fails the index. It only runs on a full
+  `ida sync`, not on watch-triggered incremental refreshes, to keep the
+  interactive watch loop fast. Today it covers unresolved associations
+  (Ruby), and unresolved `js_import`/`jsx_use` (TypeScript). Resolving
+  Active Record association macros specifically also requires the Ruby LSP
+  Rails add-on with a booted application; plain `ruby-lsp` does not treat a
+  bareword symbol like `:comments` as pointing at a class, so without the
+  Rails add-on this enrichment safely no-ops rather than guessing.
 - If resolution has zero or multiple plausible targets, Ida omits the edge.
 
 Ambiguous-candidate reporting is planned but is not implemented yet.
