@@ -373,13 +373,17 @@ func PathToURI(path string) string {
 	return "file://" + slashed
 }
 
-// URIToPath converts a file:// URI back to a filesystem path. This is a
-// simplifying ASCII-only implementation (no percent-decoding), consistent
-// with the rest of the codebase's project-relative-path assumptions.
+// URIToPath converts a file:// URI back to a filesystem path, kept in
+// slash form: Go's filepath functions (Rel, Clean, Join, ...) accept
+// forward slashes as separators on Windows too, and the rest of the
+// codebase's path handling assumes slash-separated paths throughout. This
+// is a simplifying ASCII-only implementation (no percent-decoding),
+// consistent with the rest of the codebase's project-relative-path
+// assumptions.
 func URIToPath(uri string) string {
 	path := strings.TrimPrefix(uri, "file://")
 	if len(path) >= 3 && path[0] == '/' && path[2] == ':' {
 		path = path[1:]
 	}
-	return filepath.FromSlash(path)
+	return path
 }

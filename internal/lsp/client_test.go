@@ -26,11 +26,13 @@ func writeFramed(t *testing.T, w io.Writer, msg rpcMessage) {
 }
 
 // TestPathURIRoundTrip covers the native-OS path shape (e.g.
-// `C:\foo\bar` on Windows, `/foo/bar` elsewhere).
+// `C:\foo\bar` on Windows, `/foo/bar` elsewhere). URIToPath always returns
+// slash-separated paths, matching the rest of the codebase's convention,
+// so the round trip is compared against the slash form of the input.
 func TestPathURIRoundTrip(t *testing.T) {
 	path := filepath.Join(string(filepath.Separator), "foo", "bar", "baz.rb")
 	uri := PathToURI(path)
-	if got, want := URIToPath(uri), path; got != want {
+	if got, want := URIToPath(uri), filepath.ToSlash(path); got != want {
 		t.Fatalf("URIToPath(PathToURI(%q)) = %q, want %q", path, got, want)
 	}
 }
