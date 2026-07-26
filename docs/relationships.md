@@ -10,14 +10,19 @@ roadmap.
 
 ## Confidence
 
-- `exact` means the fact is directly present in source syntax.
-- `convention` means one unique target follows a Rails naming convention.
-- `lsp` means an available LSP server (`ruby-lsp`, `typescript-language-server`)
-  resolved a `textDocument/definition` request to exactly one already-indexed
-  node, after deterministic resolution left the node unresolved. LSP
-  enrichment is additive and best-effort: a missing server, a failed
-  request, a timeout, or an ambiguous (zero/multiple-location) result never
-  produces an edge and never fails the index. It only runs on a full
+Every node and edge carries a `confidence` field: an integer from 0 to 100.
+Today every fact Ida records is deterministic and unambiguous by
+construction, so `confidence` is always `100`, regardless of which of the
+following resolved it:
+
+- direct presence in source syntax or configuration;
+- one unique target following a Rails naming convention;
+- an available LSP server (`ruby-lsp`, `typescript-language-server`)
+  resolving a `textDocument/definition` request to exactly one
+  already-indexed node, after deterministic resolution left the node
+  unresolved. LSP enrichment is additive and best-effort: a missing server, a
+  failed request, a timeout, or an ambiguous (zero/multiple-location) result
+  never produces an edge and never fails the index. It only runs on a full
   `ida sync`, not on watch-triggered incremental refreshes, to keep the
   interactive watch loop fast. Today it covers unresolved associations
   (Ruby), and unresolved `js_import`/`jsx_use` (TypeScript). Resolving
@@ -25,9 +30,12 @@ roadmap.
   Rails add-on with a booted application; plain `ruby-lsp` does not treat a
   bareword symbol like `:comments` as pointing at a class, so without the
   Rails add-on this enrichment safely no-ops rather than guessing.
-- If resolution has zero or multiple plausible targets, Ida omits the edge.
 
-Ambiguous-candidate reporting is planned but is not implemented yet.
+If resolution has zero or multiple plausible targets, Ida omits the edge
+rather than lowering its confidence.
+
+A lower, non-100 score is reserved for a planned `ambiguous` tier — plausible
+but not safe to present as fact — which is not implemented yet.
 
 ## Route declarations
 
@@ -57,7 +65,7 @@ namespace :admin do
 end
 ```
 
-Each route becomes an `exact` route node such as `GET /articles` or
+Each route becomes a route node, at confidence `100`, such as `GET /articles` or
 `GET /admin/articles/:id`. Its target evidence retains the resolved
 `controller#action`, e.g. `admin/articles#show`.
 
@@ -73,7 +81,7 @@ app/controllers/articles_controller.rb
 ```
 
 It adds a `routes_to` edge only when that file contains exactly one directly
-declared method named `index`. The edge confidence is `convention`.
+declared method named `index`, resolved by Rails naming convention (confidence `100`).
 
 Namespaced controller paths such as `admin/articles#index` map to
 `app/controllers/admin/articles_controller.rb`.
@@ -163,7 +171,7 @@ Ida looks for a unique class node named by the Rails singularization/
 camelization convention (`comments` -> `Comment` for `has_many`/`habtm`;
 the symbol camelized as-is for `has_one`/`belongs_to`) and adds an edge whose
 kind is the macro itself (`has_many`, `has_one`, `belongs_to`,
-`has_and_belongs_to_many`) at `convention` confidence. Zero or multiple
+`has_and_belongs_to_many`), resolved by convention (confidence `100`). Zero or multiple
 matching classes leave the association unresolved.
 
 `validates`/`validate` declarations and `scope :name` declarations become
@@ -192,8 +200,8 @@ ERB/HTML grammar, for `data-controller="a b"` and
 `stimulus_controller_use`/`stimulus_action_use` nodes.
 
 `stimulus_controller_use` resolves, when its identifier uniquely names one
-`stimulus_controller`, to a `stimulus_controller` edge at `convention`
-confidence. `stimulus_action_use` resolves the same way to a
+`stimulus_controller`, to a `stimulus_controller` edge resolved by convention
+(confidence `100`). `stimulus_action_use` resolves the same way to a
 `stimulus_action` edge targeting the matching `method` node. Ambiguous
 identifiers (two controllers registering the same name) are omitted, not
 guessed.
@@ -247,7 +255,8 @@ authored CSS `@apply` rules (tree-sitter-css) are scanned for static
 a `class_attr_use` node — dynamically interpolated class expressions
 (`<%= %>`, `{...}`) are skipped rather than guessed at.
 
-A token resolves to a `tailwind_uses` edge, at `convention` confidence, for
+A token resolves to a `tailwind_uses` edge, resolved by convention
+(confidence `100`), for
 every file whose static class list contains a matching utility (an exact
 match, or a common Tailwind prefix like `bg-`/`text-`/`border-` joined to the
 token name). Unlike other resolvers this is not a unique-target match: a
@@ -265,7 +274,7 @@ unrelated `Constant.method` reference; resolution narrows it down. Bare
 `Receiver.new` alone is not recorded: it names no behavior of its own, only
 the chained call after it (or a separate `Receiver.method` elsewhere) is.
 
-It resolves to a `calls` edge, at `convention` confidence, only when
+It resolves to a `calls` edge, resolved by convention (confidence `100`), only when
 `Receiver`'s unqualified name (the same matching `has_many`/`belongs_to`
 associations use) names exactly one project class, and that class's own file
 declares exactly one method with the called name — no distinction is made
@@ -338,8 +347,8 @@ rather than `ENV` directly, will not appear.
 Every document section's explicit code-symbol mentions (backtick-quoted spans
 with no whitespace) are recorded. For a locally indexed document, a mention
 that uniquely matches a graph node's name or qualified name becomes a
-`mentions` edge from the document section to that node, at `convention`
-confidence. Remote documents record mentions but are not attached to the
+`mentions` edge from the document section to that node, resolved by
+convention (confidence `100`). Remote documents record mentions but are not attached to the
 graph, since they carry no source file. Outbound links (Markdown and HTML) are
 recorded per section but do not become edges.
 

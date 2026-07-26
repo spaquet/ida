@@ -85,6 +85,13 @@ Watcher diagnostics go to stderr. `path` defaults to the current directory.
 ida watch
 ```
 
+Use `ida watch` only for CLI-only usage (running `ida search`/`ida context`/
+etc. from a terminal with no MCP client attached). `ida mcp` already runs
+this same watcher internally — see [`ida mcp`](#ida-mcp-path) below. Running
+both `ida watch` and `ida mcp` against the same project at once is redundant
+and can make them contend for the same `.ida/ida.db` file lock; run one or
+the other, not both.
+
 ### `ida status [path]`
 
 Report index state, generation, indexed time, file count, node count, edge
@@ -183,6 +190,32 @@ Traverse likely incoming and outgoing effects to depth two, returning at most
 ida impact index
 ```
 
+### `ida unused <partial|view_component>`
+
+List partials or view components with no resolved render edge.
+
+```sh
+ida unused partial
+ida unused view_component
+```
+
+### `ida duplicates <method|stimulus_controller>`
+
+List method or Stimulus controller declarations sharing one qualified name.
+
+```sh
+ida duplicates method
+ida duplicates stimulus_controller
+```
+
+### `ida env`
+
+List ENV variable reads, grouped by name.
+
+```sh
+ida env
+```
+
 ### `ida docs add <path|url>`
 
 Add an explicit local documentation file/directory or fetch one HTTP(S)
@@ -207,11 +240,31 @@ node.
 
 ### `ida mcp [path]`
 
-Serve the seven Ida MCP tools over stdio and keep the index current with an
-in-process watcher. `path` defaults to the current directory.
+Serve the ten Ida MCP tools over stdio and keep the index current with an
+in-process watcher — the same watcher `ida watch` runs standalone. `path`
+defaults to the current directory.
+
+This is a single self-contained process: an agent client only needs to
+launch `ida mcp`. Do not also run `ida watch` against the same project — it
+would be a redundant second watcher racing the same `.ida/ida.db`.
 
 ```sh
 ida mcp /absolute/path/to/my_app
 ```
 
+On start, Ida prints its status, transport, and project to stderr, and how to
+exit (Ctrl+C); stdout is reserved for protocol messages. There is no network
+port: transport is stdio only.
+
 See [MCP reference](mcp.md) for client configuration and tool schemas.
+
+### `ida mcp config [agent...]`
+
+Print MCP client configuration snippets for the running Ida binary and
+current project. Supports `claude-code`, `cursor`, `codex`, `pi`, and
+`opencode`. With no agent named, prints snippets for all supported agents.
+
+```sh
+ida mcp config claude-code
+ida mcp config cursor codex
+```

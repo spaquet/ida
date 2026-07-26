@@ -83,7 +83,7 @@ FROM nodes n WHERE n.kind = 'route'`)
 			}
 			continue
 		}
-		if err := insertEdge(tx, route.id, actionID, "routes_to", "convention", route.fileID, route.line, route.target, generation); err != nil {
+		if err := insertEdge(tx, route.id, actionID, "routes_to", 100, route.fileID, route.line, route.target, generation); err != nil {
 			return err
 		}
 		viewID, count, err := uniqueView(tx, "app/views/"+controller+"/"+action+".")
@@ -93,7 +93,7 @@ FROM nodes n WHERE n.kind = 'route'`)
 			}
 			continue
 		}
-		if err := insertEdge(tx, actionID, viewID, "renders", "convention", actionFileID, actionLine, "unique implicit Rails view", generation); err != nil {
+		if err := insertEdge(tx, actionID, viewID, "renders", 100, actionFileID, actionLine, "unique implicit Rails view", generation); err != nil {
 			return err
 		}
 	}
@@ -150,7 +150,7 @@ FROM nodes n WHERE n.kind = 'association'`)
 			}
 			continue
 		}
-		if err := insertEdge(tx, ownerID, targetID, macro, "convention", item.fileID, item.line, rest, generation); err != nil {
+		if err := insertEdge(tx, ownerID, targetID, macro, 100, item.fileID, item.line, rest, generation); err != nil {
 			return err
 		}
 	}
@@ -203,7 +203,7 @@ WHERE n.kind = 'document_section'`)
 				}
 				continue
 			}
-			if err := insertEdge(tx, item.id, targetID, "mentions", "convention", item.fileID, item.line, mention, generation); err != nil {
+			if err := insertEdge(tx, item.id, targetID, "mentions", 100, item.fileID, item.line, mention, generation); err != nil {
 				return err
 			}
 		}
@@ -320,7 +320,7 @@ WHERE n.kind = 'file' AND f.path LIKE ? ESCAPE '\' LIMIT 2`, escapeLike(prefix)+
 	return id, count, rows.Err()
 }
 
-func insertEdge(tx *sql.Tx, source, target, kind, confidence string, fileID int64, line int, evidence string, generation int64) error {
+func insertEdge(tx *sql.Tx, source, target, kind string, confidence int, fileID int64, line int, evidence string, generation int64) error {
 	sum := sha256.Sum256([]byte(source + "\x00" + target + "\x00" + kind))
 	_, err := tx.Exec(`
 INSERT OR IGNORE INTO edges(id, source_id, target_id, kind, confidence, file_id, start_line, evidence, generation)
@@ -415,7 +415,7 @@ func resolveStimulus(tx *sql.Tx, generation int64) error {
 			}
 			continue
 		}
-		if err := insertEdge(tx, use.id, targetID, "stimulus_controller", "convention", use.fileID, use.line, use.value, generation); err != nil {
+		if err := insertEdge(tx, use.id, targetID, "stimulus_controller", 100, use.fileID, use.line, use.value, generation); err != nil {
 			return err
 		}
 	}
@@ -432,7 +432,7 @@ func resolveStimulus(tx *sql.Tx, generation int64) error {
 			}
 			continue
 		}
-		if err := insertEdge(tx, action.id, targetID, "stimulus_action", "convention", action.fileID, action.line, action.value, generation); err != nil {
+		if err := insertEdge(tx, action.id, targetID, "stimulus_action", 100, action.fileID, action.line, action.value, generation); err != nil {
 			return err
 		}
 	}
@@ -496,7 +496,7 @@ WHERE n.kind = 'js_import'`)
 		if targetID == "" {
 			continue
 		}
-		if err := insertEdge(tx, item.id, targetID, "imports", "convention", item.fileID, item.line, item.spec, generation); err != nil {
+		if err := insertEdge(tx, item.id, targetID, "imports", 100, item.fileID, item.line, item.spec, generation); err != nil {
 			return err
 		}
 	}
@@ -542,7 +542,7 @@ func resolveJSX(tx *sql.Tx, generation int64) error {
 				continue
 			}
 		}
-		if err := insertEdge(tx, use.id, targetID, "jsx_renders", "convention", use.fileID, use.line, use.value, generation); err != nil {
+		if err := insertEdge(tx, use.id, targetID, "jsx_renders", 100, use.fileID, use.line, use.value, generation); err != nil {
 			return err
 		}
 	}
@@ -614,7 +614,7 @@ func resolveReactMounts(tx *sql.Tx, generation int64) error {
 				continue
 			}
 		}
-		if err := insertEdge(tx, mount.id, targetID, "mounts", "convention", mount.fileID, mount.line, mount.value, generation); err != nil {
+		if err := insertEdge(tx, mount.id, targetID, "mounts", 100, mount.fileID, mount.line, mount.value, generation); err != nil {
 			return err
 		}
 	}
@@ -662,7 +662,7 @@ WHERE n.kind = 'partial_use'`)
 			}
 			continue
 		}
-		if err := insertEdge(tx, item.id, targetID, "renders_partial", "convention", item.fileID, item.line, item.value, generation); err != nil {
+		if err := insertEdge(tx, item.id, targetID, "renders_partial", 100, item.fileID, item.line, item.value, generation); err != nil {
 			return err
 		}
 	}
@@ -723,7 +723,7 @@ func resolveViewComponents(tx *sql.Tx, generation int64) error {
 			}
 			continue
 		}
-		if err := insertEdge(tx, use.id, targetID, "renders_component", "convention", use.fileID, use.line, use.value, generation); err != nil {
+		if err := insertEdge(tx, use.id, targetID, "renders_component", 100, use.fileID, use.line, use.value, generation); err != nil {
 			return err
 		}
 	}
@@ -766,7 +766,7 @@ func resolveCalls(tx *sql.Tx, generation int64) error {
 		if count != 1 {
 			continue
 		}
-		if err := insertEdge(tx, use.id, methodID, "calls", "convention", use.fileID, use.line, use.value, generation); err != nil {
+		if err := insertEdge(tx, use.id, methodID, "calls", 100, use.fileID, use.line, use.value, generation); err != nil {
 			return err
 		}
 	}
@@ -850,7 +850,7 @@ func resolveTailwind(tx *sql.Tx, generation int64) error {
 				}
 				continue
 			}
-			if err := insertEdge(tx, token.id, targetID, "tailwind_uses", "convention", use.fileID, use.line, match, generation); err != nil {
+			if err := insertEdge(tx, token.id, targetID, "tailwind_uses", 100, use.fileID, use.line, match, generation); err != nil {
 				return err
 			}
 		}

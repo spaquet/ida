@@ -170,7 +170,7 @@ func enrichRuby(tx *sql.Tx, root string, command []string, generation int64) err
 		if targetID == "" {
 			continue
 		}
-		if err := insertEdge(tx, item.id, targetID, macro, "lsp", item.fileID, item.line, rest, generation); err != nil {
+		if err := insertEdge(tx, item.id, targetID, macro, 100, item.fileID, item.line, rest, generation); err != nil {
 			return err
 		}
 	}
@@ -237,7 +237,7 @@ func enrichTypeScript(tx *sql.Tx, root string, command []string, generation int6
 		if targetID == "" {
 			continue
 		}
-		if err := insertEdge(tx, item.id, targetID, "imports", "lsp", item.fileID, item.line, item.value, generation); err != nil {
+		if err := insertEdge(tx, item.id, targetID, "imports", 100, item.fileID, item.line, item.value, generation); err != nil {
 			return err
 		}
 	}
@@ -272,7 +272,7 @@ func enrichTypeScript(tx *sql.Tx, root string, command []string, generation int6
 		if targetID == "" {
 			continue
 		}
-		if err := insertEdge(tx, item.id, targetID, "jsx_renders", "lsp", item.fileID, item.line, item.value, generation); err != nil {
+		if err := insertEdge(tx, item.id, targetID, "jsx_renders", 100, item.fileID, item.line, item.value, generation); err != nil {
 			return err
 		}
 	}

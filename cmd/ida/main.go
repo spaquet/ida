@@ -351,6 +351,8 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
+		fmt.Fprintf(os.Stderr, "ida mcp: running, transport stdio (no network port), project %s\n", root)
+		fmt.Fprintln(os.Stderr, "ida mcp: waiting for a client on stdin; press Ctrl+C to exit")
 		return mcp.Serve(context.Background(), root, os.Stdin, os.Stdout, os.Stderr)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
@@ -463,18 +465,18 @@ func printValue(v any, asJSON bool) error {
 			fmt.Printf("\n%s\n%s\n", file.Path, file.Excerpt)
 		}
 		for _, relationship := range value.Relationships {
-			fmt.Printf("%s --%s--> %s (%s)\n", relationship.SourceName, relationship.Kind, relationship.TargetName, relationship.Confidence)
+			fmt.Printf("%s --%s--> %s (%d%%)\n", relationship.SourceName, relationship.Kind, relationship.TargetName, relationship.Confidence)
 		}
 	case query.NodeResult:
 		fmt.Printf("%s\t%s\t%s:%d\n", value.Kind, value.QualifiedName, value.Path, value.StartLine)
 		for _, relationship := range append(value.Incoming, value.Outgoing...) {
-			fmt.Printf("%s --%s--> %s (%s)\n", relationship.SourceName, relationship.Kind, relationship.TargetName, relationship.Confidence)
+			fmt.Printf("%s --%s--> %s (%d%%)\n", relationship.SourceName, relationship.Kind, relationship.TargetName, relationship.Confidence)
 		}
 	case query.PathResult:
 		for i, node := range value.Nodes {
 			fmt.Printf("%s\t%s\n", node.Kind, node.QualifiedName)
 			if i < len(value.Edges) {
-				fmt.Printf("  --%s (%s)-->\n", value.Edges[i].Kind, value.Edges[i].Confidence)
+				fmt.Printf("  --%s (%d%%)-->\n", value.Edges[i].Kind, value.Edges[i].Confidence)
 			}
 		}
 	case []mcp.AgentConfig:
@@ -486,7 +488,7 @@ func printValue(v any, asJSON bool) error {
 		}
 	case []query.Relationship:
 		for _, relationship := range value {
-			fmt.Printf("%s --%s--> %s (%s)\n", relationship.SourceName, relationship.Kind, relationship.TargetName, relationship.Confidence)
+			fmt.Printf("%s --%s--> %s (%d%%)\n", relationship.SourceName, relationship.Kind, relationship.TargetName, relationship.Confidence)
 		}
 	case []query.DuplicateGroup:
 		for _, group := range value {

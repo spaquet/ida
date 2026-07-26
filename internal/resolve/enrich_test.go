@@ -157,7 +157,7 @@ func enrichInsertNode(t *testing.T, tx *sql.Tx, id string, fileID int64, kind, n
 	t.Helper()
 	_, err := tx.Exec(`
 INSERT INTO nodes(id, file_id, kind, name, qualified_name, start_line, end_line, extractor, confidence, generation)
-VALUES (?, ?, ?, ?, ?, ?, ?, 'test', 'exact', 1)`, id, fileID, kind, name, qualified, line, line)
+VALUES (?, ?, ?, ?, ?, ?, ?, 'test', 100, 1)`, id, fileID, kind, name, qualified, line, line)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,13 +189,14 @@ func TestEnrichRubyResolvesAssociation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var kind, confidence, target string
+	var kind, target string
+	var confidence int
 	err = db.QueryRow(`SELECT kind, confidence, target_id FROM edges WHERE source_id = 'assoc1'`).Scan(&kind, &confidence, &target)
 	if err != nil {
 		t.Fatalf("expected an edge from assoc1: %v", err)
 	}
-	if kind != "has_many" || confidence != "lsp" || target != "comment_class" {
-		t.Fatalf("edge = kind=%q confidence=%q target=%q; want has_many/lsp/comment_class", kind, confidence, target)
+	if kind != "has_many" || confidence != 100 || target != "comment_class" {
+		t.Fatalf("edge = kind=%q confidence=%d target=%q; want has_many/100/comment_class", kind, confidence, target)
 	}
 }
 
@@ -269,19 +270,21 @@ func TestEnrichTypeScriptResolvesImportAndJSX(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var importKind, importConfidence, importTarget string
+	var importKind, importTarget string
+	var importConfidence int
 	if err := db.QueryRow(`SELECT kind, confidence, target_id FROM edges WHERE source_id = 'import1'`).Scan(&importKind, &importConfidence, &importTarget); err != nil {
 		t.Fatalf("expected an edge from import1: %v", err)
 	}
-	if importKind != "imports" || importConfidence != "lsp" || importTarget != "vendor_file_node" {
-		t.Fatalf("import edge = %q/%q/%q; want imports/lsp/vendor_file_node", importKind, importConfidence, importTarget)
+	if importKind != "imports" || importConfidence != 100 || importTarget != "vendor_file_node" {
+		t.Fatalf("import edge = %q/%d/%q; want imports/100/vendor_file_node", importKind, importConfidence, importTarget)
 	}
 
-	var jsxKind, jsxConfidence, jsxTarget string
+	var jsxKind, jsxTarget string
+	var jsxConfidence int
 	if err := db.QueryRow(`SELECT kind, confidence, target_id FROM edges WHERE source_id = 'jsxuse1'`).Scan(&jsxKind, &jsxConfidence, &jsxTarget); err != nil {
 		t.Fatalf("expected an edge from jsxuse1: %v", err)
 	}
-	if jsxKind != "jsx_renders" || jsxConfidence != "lsp" || jsxTarget != "widget_component" {
-		t.Fatalf("jsx edge = %q/%q/%q; want jsx_renders/lsp/widget_component", jsxKind, jsxConfidence, jsxTarget)
+	if jsxKind != "jsx_renders" || jsxConfidence != 100 || jsxTarget != "widget_component" {
+		t.Fatalf("jsx edge = %q/%d/%q; want jsx_renders/100/widget_component", jsxKind, jsxConfidence, jsxTarget)
 	}
 }

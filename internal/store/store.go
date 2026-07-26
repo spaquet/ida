@@ -41,7 +41,7 @@ type SearchResult struct {
 	StartLine     int    `json:"start_line"`
 	EndLine       int    `json:"end_line"`
 	ContentHash   string `json:"content_hash"`
-	Confidence    string `json:"confidence"`
+	Confidence    int    `json:"confidence"`
 	Extractor     string `json:"extractor"`
 }
 
@@ -50,7 +50,7 @@ type Edge struct {
 	SourceID   string `json:"source_id"`
 	TargetID   string `json:"target_id"`
 	Kind       string `json:"kind"`
-	Confidence string `json:"confidence"`
+	Confidence int    `json:"confidence"`
 	Path       string `json:"path"`
 	StartLine  int    `json:"start_line"`
 	Evidence   string `json:"evidence"`
@@ -112,7 +112,7 @@ CREATE TABLE IF NOT EXISTS nodes (
   start_line INTEGER NOT NULL,
   end_line INTEGER NOT NULL,
   extractor TEXT NOT NULL,
-  confidence TEXT NOT NULL,
+  confidence INTEGER NOT NULL,
   generation INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS nodes_name ON nodes(name);
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS edges (
   source_id TEXT NOT NULL,
   target_id TEXT NOT NULL,
   kind TEXT NOT NULL,
-  confidence TEXT NOT NULL,
+  confidence INTEGER NOT NULL,
   file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
   start_line INTEGER NOT NULL,
   evidence TEXT NOT NULL,

@@ -30,15 +30,14 @@ connects the two.
 
 ## Intended experience
 
+Ida is driven through its CLI or its MCP server — see the
+[CLI reference](docs/cli.md) for the full command list and the
+[MCP reference](docs/mcp.md) for the full tool list. A typical session:
+
 ```sh
-ida --version
 ida init . --install-lsp
-ida doctor
-ida docs add docs/
-ida docs add https://example.com/team-handbook.md
 ida status
 ida context "How does a comment update reach the browser?"
-ida impact publish
 ida mcp
 ```
 

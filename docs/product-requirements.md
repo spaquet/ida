@@ -87,15 +87,17 @@ scope` must explain why a path is included or excluded.
 ### Extraction and Rails understanding
 
 Every node and edge must carry its source file, line range, extractor, and
-confidence:
+confidence — an integer from 0 to 100. A fact is scored `100` when it is any
+of:
 
-- `exact`: directly present in syntax or configuration;
-- `convention`: resolved using an unambiguous Rails convention;
-- `lsp`: reported by a language server;
-- `ambiguous`: plausible but not safe to present as fact.
+- directly present in syntax or configuration;
+- resolved using an unambiguous Rails convention;
+- reported by a language server.
 
-Ambiguous relationships may be returned as candidates but must never be mixed
-silently with exact relationships.
+A future `ambiguous` tier — plausible but not safe to present as fact — will
+carry a score below `100`. Ambiguous relationships may be returned as
+candidates but must never be mixed silently with confidence-`100`
+relationships.
 
 The graph must represent:
 

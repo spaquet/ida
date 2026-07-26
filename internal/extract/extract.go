@@ -19,7 +19,7 @@ type Node struct {
 	StartLine     int
 	EndLine       int
 	Extractor     string
-	Confidence    string
+	Confidence    int
 }
 
 var (
@@ -169,7 +169,23 @@ func File(path string, content []byte) []Node {
 		}
 		nodes = append(nodes, node(path, "partial", name, qualified, 1, lineCount(content), "partials-v1"))
 	}
-	return nodes
+	return dedupeByID(nodes)
+}
+
+// dedupeByID drops repeat nodes sharing one ID (same file, kind, qualified
+// name, and start line — e.g. `Rails.env` appearing twice on one line),
+// keeping the first occurrence. Same ID means the same fact, not two facts.
+func dedupeByID(nodes []Node) []Node {
+	seen := make(map[string]bool, len(nodes))
+	deduped := nodes[:0]
+	for _, n := range nodes {
+		if seen[n.ID] {
+			continue
+		}
+		seen[n.ID] = true
+		deduped = append(deduped, n)
+	}
+	return deduped
 }
 
 // partialName reports the conventional lookup name of a Rails partial file
@@ -473,7 +489,7 @@ func node(path, kind, name, qualified string, start, end int, extractor string) 
 	sum := sha256.Sum256([]byte(path + "\x00" + kind + "\x00" + qualified + "\x00" + strconv.Itoa(start)))
 	return Node{
 		ID: hex.EncodeToString(sum[:]), Kind: kind, Name: name, QualifiedName: qualified,
-		StartLine: start, EndLine: end, Extractor: extractor, Confidence: "exact",
+		StartLine: start, EndLine: end, Extractor: extractor, Confidence: 100,
 	}
 }
 

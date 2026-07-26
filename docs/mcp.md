@@ -14,7 +14,8 @@ Ida implements MCP revision `2025-06-18` over stdio:
 
 - stdin and stdout carry newline-delimited UTF-8 JSON-RPC 2.0 messages;
 - stdout contains protocol messages only;
-- watcher and operational diagnostics go to stderr;
+- watcher, startup status (running/transport/project, exit instructions), and
+  operational diagnostics go to stderr;
 - the server advertises the `tools` capability with a stable tool list; and
 - successful tool calls return both object-shaped `structuredContent` and its
   serialized JSON in a text content block.
@@ -53,6 +54,12 @@ only prints the snippet; it never edits agent configuration itself.
 The MCP process starts an in-process filesystem watcher. It debounces normal
 save bursts and periodically reconciles file metadata and hashes. It does not
 start a shared daemon.
+
+`ida mcp` is a single self-contained process: it does its own watching, so do
+not also run `ida watch` against the same project. The two would race each
+other for the same `.ida/ida.db` file lock. Use `ida watch` on its own only
+when you want the index kept fresh for CLI use (`ida search`, `ida context`,
+…) with no MCP client attached at all.
 
 ## Tools
 
@@ -163,6 +170,38 @@ Refresh explicit changed paths or rebuild the complete scoped index.
 
 Paths are validated against the project root and the shared project scope.
 Omit `paths` to perform the same complete rebuild as `ida sync --rebuild`.
+
+### `ida_unused`
+
+List partials or view components with no resolved render edge.
+
+| Parameter | Required | Default | Bounds |
+| --- | --- | --- | --- |
+| `kind` | yes | — | `partial` or `view_component` |
+
+```json
+{"kind":"partial"}
+```
+
+### `ida_duplicates`
+
+List method or Stimulus controller declarations sharing one qualified name.
+
+| Parameter | Required | Default | Bounds |
+| --- | --- | --- | --- |
+| `kind` | yes | — | `method` or `stimulus_controller` |
+
+```json
+{"kind":"method"}
+```
+
+### `ida_env`
+
+List ENV variable reads, grouped by name. Takes no parameters.
+
+```json
+{}
+```
 
 ## JSON-RPC example
 
