@@ -10,6 +10,19 @@ MCP server instead of repeatedly scanning the repository.
 
 > Status: design phase. The CLI is not implemented yet.
 
+## Why Ida?
+
+Ida stands for **Inference-Driven Architecture**. Rails applications are held
+together by more than explicit function calls: a route implies a controller
+action, a model name implies a table, and a Turbo Stream can connect a server
+change to a browser update without either side naming the whole path.
+
+Ida follows those clues. It turns framework conventions into an explicit,
+traceable graph so an agent can understand the architecture from evidence
+rather than guesswork. The name reflects that journey: start with what the code
+says, infer only what the framework supports, and preserve the reasoning that
+connects the two.
+
 ## Intended experience
 
 ```sh
