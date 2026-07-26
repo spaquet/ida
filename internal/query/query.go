@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spaquet/ida/internal/store"
@@ -21,9 +22,36 @@ type ContextFile struct {
 }
 
 type ContextResult struct {
-	Files     []ContextFile `json:"files"`
-	Stale     bool          `json:"stale"`
-	Truncated bool          `json:"truncated"`
+	Files         []ContextFile  `json:"files"`
+	Relationships []Relationship `json:"relationships,omitempty"`
+	Stale         bool           `json:"stale"`
+	Truncated     bool           `json:"truncated"`
+}
+
+type NodeResult struct {
+	store.SearchResult
+	Incoming []Relationship `json:"incoming"`
+	Outgoing []Relationship `json:"outgoing"`
+}
+
+type Relationship struct {
+	Kind       string `json:"kind"`
+	Confidence string `json:"confidence"`
+	SourceID   string `json:"source_id"`
+	SourceName string `json:"source_name"`
+	TargetID   string `json:"target_id"`
+	TargetName string `json:"target_name"`
+	Evidence   string `json:"evidence"`
+}
+
+type PathResult struct {
+	Nodes []store.SearchResult `json:"nodes"`
+	Edges []Relationship       `json:"edges"`
+}
+
+type pathPrior struct {
+	id   string
+	edge Relationship
 }
 
 func Search(db *store.DB, term string, limit int) ([]store.SearchResult, error) {
@@ -69,7 +97,7 @@ func Context(db *store.DB, root, task string, fileLimit, byteLimit int) (Context
 	if fileLimit < 1 || fileLimit > 20 || byteLimit < 1 || byteLimit > 20_000 {
 		return ContextResult{}, errors.New("context limits out of range")
 	}
-	results, err := Search(db, task, 100)
+	results, err := contextSearch(db, task)
 	if err != nil {
 		return ContextResult{}, err
 	}
@@ -110,7 +138,221 @@ func Context(db *store.DB, root, task string, fileLimit, byteLimit int) (Context
 			Path: result.Path, StartLine: start, EndLine: end, Excerpt: text, Confidence: result.Confidence,
 		})
 	}
+	seenRelationships := make(map[string]bool)
+	for _, result := range results {
+		relationships, err := relationships(db, result.ID, "", 20-len(output.Relationships))
+		if err != nil {
+			return output, err
+		}
+		for _, relationship := range relationships {
+			key := relationship.SourceID + "\x00" + relationship.Kind + "\x00" + relationship.TargetID
+			if !seenRelationships[key] {
+				seenRelationships[key] = true
+				output.Relationships = append(output.Relationships, relationship)
+				if len(output.Relationships) == 20 {
+					output.Truncated = true
+					break
+				}
+			}
+		}
+	}
 	return output, nil
+}
+
+func Node(db *store.DB, nameOrID string) (NodeResult, error) {
+	rows, err := db.Query(`
+SELECT n.id, n.kind, n.name, n.qualified_name, f.path, n.start_line, n.end_line,
+       f.content_hash, n.confidence, n.extractor
+FROM nodes n JOIN files f ON f.id = n.file_id
+WHERE n.id = ? OR n.name = ? OR n.qualified_name = ?
+ORDER BY CASE WHEN n.id = ? THEN 0 WHEN n.qualified_name = ? THEN 1 ELSE 2 END
+LIMIT 2`, nameOrID, nameOrID, nameOrID, nameOrID, nameOrID)
+	if err != nil {
+		return NodeResult{}, err
+	}
+	defer rows.Close()
+	var matches []store.SearchResult
+	for rows.Next() {
+		var result store.SearchResult
+		if err := rows.Scan(&result.ID, &result.Kind, &result.Name, &result.QualifiedName, &result.Path,
+			&result.StartLine, &result.EndLine, &result.ContentHash, &result.Confidence, &result.Extractor); err != nil {
+			return NodeResult{}, err
+		}
+		matches = append(matches, result)
+	}
+	if len(matches) == 0 {
+		return NodeResult{}, errors.New("node not found")
+	}
+	if len(matches) > 1 && matches[0].ID != nameOrID && matches[0].QualifiedName != nameOrID {
+		return NodeResult{}, errors.New("node name is ambiguous; use its ID or qualified name")
+	}
+	result := NodeResult{SearchResult: matches[0]}
+	result.Incoming, err = relationships(db, result.ID, "incoming", 100)
+	if err == nil {
+		result.Outgoing, err = relationships(db, result.ID, "outgoing", 100)
+	}
+	return result, err
+}
+
+func Path(db *store.DB, from, to string, maxDepth int) (PathResult, error) {
+	if maxDepth < 1 || maxDepth > 6 {
+		return PathResult{}, errors.New("depth must be between 1 and 6")
+	}
+	start, err := Node(db, from)
+	if err != nil {
+		return PathResult{}, err
+	}
+	end, err := Node(db, to)
+	if err != nil {
+		return PathResult{}, err
+	}
+	queue := []string{start.ID}
+	seen := map[string]pathPrior{start.ID: {}}
+	depth := map[string]int{start.ID: 0}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current == end.ID {
+			return buildPath(db, start.ID, end.ID, seen)
+		}
+		if depth[current] == maxDepth {
+			continue
+		}
+		next, err := relationships(db, current, "outgoing", 100)
+		if err != nil {
+			return PathResult{}, err
+		}
+		for _, edge := range next {
+			if _, ok := seen[edge.TargetID]; ok {
+				continue
+			}
+			seen[edge.TargetID] = pathPrior{id: current, edge: edge}
+			depth[edge.TargetID] = depth[current] + 1
+			queue = append(queue, edge.TargetID)
+		}
+	}
+	return PathResult{}, errors.New("no relationship path found")
+}
+
+func Impact(db *store.DB, nameOrID string, depth, limit int) ([]Relationship, error) {
+	if depth < 1 || depth > 4 || limit < 1 || limit > 100 {
+		return nil, errors.New("impact limits out of range")
+	}
+	start, err := Node(db, nameOrID)
+	if err != nil {
+		return nil, err
+	}
+	queue := []string{start.ID}
+	seen := map[string]bool{start.ID: true}
+	seenEdges := make(map[string]bool)
+	var result []Relationship
+	for level := 0; level < depth && len(queue) > 0 && len(result) < limit; level++ {
+		current := queue
+		queue = nil
+		for _, id := range current {
+			edges, err := relationships(db, id, "", limit-len(result))
+			if err != nil {
+				return nil, err
+			}
+			for _, edge := range edges {
+				key := edge.SourceID + "\x00" + edge.Kind + "\x00" + edge.TargetID
+				if !seenEdges[key] {
+					seenEdges[key] = true
+					result = append(result, edge)
+				}
+				for _, adjacent := range []string{edge.SourceID, edge.TargetID} {
+					if !seen[adjacent] {
+						seen[adjacent] = true
+						queue = append(queue, adjacent)
+					}
+				}
+			}
+		}
+	}
+	return result, nil
+}
+
+func contextSearch(db *store.DB, task string) ([]store.SearchResult, error) {
+	results, err := Search(db, task, 100)
+	if err != nil || len(results) > 0 {
+		return results, err
+	}
+	seen := make(map[string]bool)
+	for _, token := range strings.FieldsFunc(task, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_!?=:#/", r))
+	}) {
+		if len(token) < 3 {
+			continue
+		}
+		matches, err := Search(db, token, 20)
+		if err != nil {
+			return nil, err
+		}
+		for _, match := range matches {
+			if !seen[match.ID] {
+				seen[match.ID] = true
+				results = append(results, match)
+			}
+		}
+	}
+	return results, nil
+}
+
+func relationships(db *store.DB, id, direction string, limit int) ([]Relationship, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	where := "(e.source_id = ? OR e.target_id = ?)"
+	args := []any{id, id, limit}
+	if direction == "incoming" {
+		where = "e.target_id = ?"
+		args = []any{id, limit}
+	} else if direction == "outgoing" {
+		where = "e.source_id = ?"
+		args = []any{id, limit}
+	}
+	rows, err := db.Query(`
+SELECT e.kind, e.confidence, e.source_id, s.name, e.target_id, t.name, e.evidence
+FROM edges e JOIN nodes s ON s.id = e.source_id JOIN nodes t ON t.id = e.target_id
+WHERE `+where+` ORDER BY e.kind, s.name, t.name LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []Relationship
+	for rows.Next() {
+		var item Relationship
+		if err := rows.Scan(&item.Kind, &item.Confidence, &item.SourceID, &item.SourceName, &item.TargetID, &item.TargetName, &item.Evidence); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func buildPath(db *store.DB, start, end string, seen map[string]pathPrior) (PathResult, error) {
+	var ids []string
+	var edges []Relationship
+	for id := end; ; {
+		ids = append(ids, id)
+		if id == start {
+			break
+		}
+		item := seen[id]
+		edges = append(edges, item.edge)
+		id = item.id
+	}
+	slices.Reverse(ids)
+	slices.Reverse(edges)
+	result := PathResult{Edges: edges}
+	for _, id := range ids {
+		node, err := Node(db, id)
+		if err != nil {
+			return PathResult{}, err
+		}
+		result.Nodes = append(result.Nodes, node.SearchResult)
+	}
+	return result, nil
 }
 
 func readInside(root, relative string) ([]byte, error) {
