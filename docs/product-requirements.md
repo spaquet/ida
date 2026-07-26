@@ -64,10 +64,13 @@ Included by default:
 
 - `app/` Ruby, templates, JavaScript/TypeScript, JSX/TSX, and authored CSS;
 - `config/routes.rb`, application/environment configuration, and initializers;
-- `lib/`, Rails tasks, `test/`, and `spec/`;
+- `lib/` and Rails tasks;
 - `db/schema.rb` or `db/structure.sql` and migrations;
 - `Gemfile`, lockfiles, import maps, JavaScript manifests, and Tailwind config;
 - Markdown, AsciiDoc, HTML, and plain-text documentation in the repository.
+
+`test/` and `spec/` are not included by default. A user may opt in through
+`ida.json`, for example with `"include": ["test/**", "spec/**"]`.
 
 Always excluded by default:
 
@@ -102,7 +105,8 @@ The graph must represent:
   and migrations;
 - jobs, mailers, channels, concerns, services, components, and Rails engines;
 - render, redirect, enqueue, mail, broadcast, and channel relationships;
-- tests/specs and the application symbols they exercise.
+- tests/specs and the application symbols they exercise, when those directories
+  are explicitly included.
 
 Ruby metaprogramming must fail safely: no edge is better than a confidently
 wrong edge.

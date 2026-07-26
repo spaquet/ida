@@ -80,6 +80,9 @@ The scanner shares one `Scope` predicate with the watcher. Scope combines:
 3. `.gitignore`;
 4. `ida.json` includes and excludes.
 
+Tests under `test/` and `spec/` are outside the default scope. They use the same
+extractors and resolvers when a user opts in through `ida.json`.
+
 The same decision and reason power `ida scope`, preventing index/watch drift.
 Each worktree owns its own `.ida/` directory so platform-specific processes do
 not share locks or database files.
@@ -257,9 +260,9 @@ previous complete generation queryable.
 6. return excerpts, relationship summaries, confidence, and freshness.
 
 Ranking boosts routes, definitions, production code, and direct Rails
-relationships. Tests and docs remain discoverable but do not displace the
-implementation unless the query names them. Generated assets never enter the
-candidate set.
+relationships. Opted-in tests and docs remain discoverable but do not displace
+the implementation unless the query names them. Generated assets never enter
+the candidate set.
 
 `impact` performs a bounded reverse traversal over calls, renders, routes,
 associations, enqueues, broadcasts, imports, and test links. It says "likely

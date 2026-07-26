@@ -195,7 +195,7 @@ func defaultIncluded(path string) bool {
 	if strings.HasPrefix(path, "config/") {
 		return ext == ".rb" || ext == ".yml" || ext == ".yaml"
 	}
-	if strings.HasPrefix(path, "lib/") || strings.HasPrefix(path, "test/") || strings.HasPrefix(path, "spec/") || strings.HasPrefix(path, "db/migrate/") {
+	if strings.HasPrefix(path, "lib/") || strings.HasPrefix(path, "db/migrate/") {
 		return true
 	}
 	return slices.Contains([]string{".md", ".markdown", ".adoc", ".asciidoc", ".html", ".txt"}, ext)
