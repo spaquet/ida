@@ -2,6 +2,22 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0]
+
+- Portability hardening: CI now runs gofmt, go vet, golangci-lint, build, and
+  the full test suite on macOS, Linux, and Windows runners (previously
+  Ubuntu-only).
+- Fixed `internal/lsp.PathToURI`/`URIToPath` to produce and parse
+  spec-correct `file://` URIs for Windows-shaped paths (drive letter,
+  backslashes) instead of naive string concatenation, so LSP enrichment
+  interoperates with real Ruby/TypeScript language servers on Windows.
+- Added a tag-triggered (`v*`) release workflow that gates on the full test
+  matrix, then builds and publishes native binaries to GitHub Releases for
+  macOS (amd64, arm64), Linux (amd64, arm64), and Windows (amd64) — built
+  natively per platform since the tree-sitter bindings require cgo.
+- `ida --version` now reports the released tag (embedded via `-ldflags` at
+  build time) instead of a hardcoded, easily stale constant.
+
 ## [0.4.4]
 
 - Added partial resolution: `render "name"`/`render partial: "name"` calls

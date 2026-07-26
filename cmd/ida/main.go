@@ -22,9 +22,12 @@ import (
 	"github.com/spaquet/ida/internal/watch"
 )
 
+// version is overridden at release build time via
+// -ldflags "-X main.version=<tag>".
+var version = "dev"
+
 const (
-	version = "0.4.0"
-	help    = `Ida is a local-first knowledge graph for Rails applications.
+	help = `Ida is a local-first knowledge graph for Rails applications.
 
 Usage:
   ida [--json] <command> [arguments]
