@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -360,14 +361,29 @@ func toLocations(items []rawLocation) []Location {
 	return out
 }
 
-// PathToURI converts an absolute filesystem path to a file:// URI.
+// PathToURI converts an absolute filesystem path to a file:// URI. On
+// Windows, path uses backslashes and may start with a drive letter (e.g.
+// `C:\foo\bar`); the URI form needs forward slashes and a leading slash
+// before the drive letter (file:///C:/foo/bar).
 func PathToURI(path string) string {
-	return "file://" + path
+	slashed := filepath.ToSlash(path)
+	if !strings.HasPrefix(slashed, "/") {
+		slashed = "/" + slashed
+	}
+	return "file://" + slashed
 }
 
-// URIToPath converts a file:// URI back to a filesystem path. This is a
-// simplifying ASCII-only implementation (no percent-decoding), consistent
-// with the rest of the codebase's project-relative-path assumptions.
+// URIToPath converts a file:// URI back to a filesystem path, kept in
+// slash form: Go's filepath functions (Rel, Clean, Join, ...) accept
+// forward slashes as separators on Windows too, and the rest of the
+// codebase's path handling assumes slash-separated paths throughout. This
+// is a simplifying ASCII-only implementation (no percent-decoding),
+// consistent with the rest of the codebase's project-relative-path
+// assumptions.
 func URIToPath(uri string) string {
-	return strings.TrimPrefix(uri, "file://")
+	path := strings.TrimPrefix(uri, "file://")
+	if len(path) >= 3 && path[0] == '/' && path[2] == ':' {
+		path = path[1:]
+	}
+	return path
 }

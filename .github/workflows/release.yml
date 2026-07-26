@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+      - name: go build
+        run: go build ./...
+
+      - name: go test
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: go test ./...
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+          - os: macos-15-intel
+            goos: darwin
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "1"
+        run: |
+          out="ida"
+          if [ "${{ matrix.goos }}" = "windows" ]; then out="ida.exe"; fi
+          go build -trimpath -ldflags "-s -w -X main.version=${{ steps.version.outputs.version }}" -o "dist/$out" ./cmd/ida
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          bin="dist/ida"
+          if [ "${{ matrix.goos }}" = "windows" ]; then bin="dist/ida.exe"; fi
+          "$bin" --version
+          "$bin" --help >/dev/null
+          fixture="$(mktemp -d)/rails-app"
+          cp -R internal/index/testdata/rails "$fixture"
+          "$bin" init "$fixture"
+          "$bin" doctor "$fixture"
+          "$bin" status "$fixture"
+
+      - name: Package
+        id: package
+        shell: bash
+        run: |
+          name="ida-${{ steps.version.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          mkdir -p out
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            archive="out/$name.zip"
+            (cd dist && 7z a "../$archive" ida.exe)
+          else
+            archive="out/$name.tar.gz"
+            tar -C dist -czf "$archive" ida
+          fi
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ida-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ steps.package.outputs.archive }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" artifacts/* \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

@@ -58,6 +58,14 @@ go build -o ida ./cmd/ida
 ./ida mcp
 ```
 
+## Installing a release binary
+
+Tagged releases publish prebuilt binaries for macOS (amd64, arm64), Linux
+(amd64, arm64), and Windows (amd64) on the
+[GitHub Releases page](https://github.com/spaquet/ida/releases). Download the
+archive matching your platform, extract it, and put `ida` (or `ida.exe`) on
+your `PATH`.
+
 Ida is designed to:
 
 - refresh incrementally after file saves;

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -21,6 +22,28 @@ func writeFramed(t *testing.T, w io.Writer, msg rpcMessage) {
 	}
 	if _, err := w.Write(body); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestPathURIRoundTrip covers the native-OS path shape (e.g.
+// `C:\foo\bar` on Windows, `/foo/bar` elsewhere). URIToPath always returns
+// slash-separated paths, matching the rest of the codebase's convention,
+// so the round trip is compared against the slash form of the input.
+func TestPathURIRoundTrip(t *testing.T) {
+	path := filepath.Join(string(filepath.Separator), "foo", "bar", "baz.rb")
+	uri := PathToURI(path)
+	if got, want := URIToPath(uri), filepath.ToSlash(path); got != want {
+		t.Fatalf("URIToPath(PathToURI(%q)) = %q, want %q", path, got, want)
+	}
+}
+
+// TestURIToPathStripsWindowsDriveLeadingSlash covers a Windows-shaped
+// file:// URI (file:///C:/foo/bar), which must lose its leading slash
+// before the drive letter regardless of the OS running the test.
+func TestURIToPathStripsWindowsDriveLeadingSlash(t *testing.T) {
+	got := URIToPath("file:///C:/foo/bar")
+	if len(got) == 0 || got[0] == '/' {
+		t.Fatalf("URIToPath(%q) = %q, want no leading slash before the drive letter", "file:///C:/foo/bar", got)
 	}
 }
 
