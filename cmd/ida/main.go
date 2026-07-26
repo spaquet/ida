@@ -47,6 +47,9 @@ Commands:
   impact <name-or-id>  Show likely change effects
   unused <partial|view_component>
                        List partials or view components with no resolved render
+  duplicates <method|stimulus_controller>
+                       List declarations sharing one qualified name
+  env                  List ENV variable reads, grouped by name
   docs add <path|url>  Add an explicit documentation source
   mcp [path]           Serve MCP over stdio
   mcp config [agent...]
@@ -238,6 +241,39 @@ func run(args []string) error {
 		}
 		defer func() { _ = db.Close() }()
 		results, err := query.Unused(db, args[1])
+		if err != nil {
+			return err
+		}
+		return printValue(results, jsonOutput)
+	case "duplicates":
+		if len(args) != 2 {
+			return errors.New("usage: ida duplicates <method|stimulus_controller>")
+		}
+		root, err := project.Discover(".")
+		if err != nil {
+			return err
+		}
+		db, err := store.OpenExisting(root)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = db.Close() }()
+		results, err := query.Duplicates(db, args[1])
+		if err != nil {
+			return err
+		}
+		return printValue(results, jsonOutput)
+	case "env":
+		root, err := project.Discover(".")
+		if err != nil {
+			return err
+		}
+		db, err := store.OpenExisting(root)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = db.Close() }()
+		results, err := query.EnvVars(db)
 		if err != nil {
 			return err
 		}
@@ -448,6 +484,24 @@ func printValue(v any, asJSON bool) error {
 	case []query.Relationship:
 		for _, relationship := range value {
 			fmt.Printf("%s --%s--> %s (%s)\n", relationship.SourceName, relationship.Kind, relationship.TargetName, relationship.Confidence)
+		}
+	case []query.DuplicateGroup:
+		for _, group := range value {
+			expected := ""
+			if group.Expected {
+				expected = " (expected: environment/locale config)"
+			}
+			fmt.Printf("%s%s\n", group.QualifiedName, expected)
+			for _, loc := range group.Locations {
+				fmt.Printf("  %s:%d\n", loc.Path, loc.StartLine)
+			}
+		}
+	case []query.EnvVarGroup:
+		for _, group := range value {
+			fmt.Println(group.Name)
+			for _, use := range group.Uses {
+				fmt.Printf("  [%s] %s:%d\n", use.Category, use.Path, use.Line)
+			}
 		}
 	default:
 		return errors.New("unsupported output " + strconv.Quote(fmt.Sprintf("%T", v)))

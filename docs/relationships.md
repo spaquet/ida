@@ -281,6 +281,58 @@ inside interpolated strings or comments are not tracked. Use `ida search
 <ServiceName>` for a broader text match, and `ida impact <ServiceName>`/
 `ida impact <method>` to see whatever `calls` edges did resolve.
 
+## Duplicate declarations
+
+Ruby method nodes are qualified by their owner (the nearest enclosing class,
+by the same indentation-stack attribution associations/scopes use), e.g.
+`NotifyService#call` or `NotifyService#self.call` for a class method — a
+class method and an instance method of the same name are never considered
+duplicates of each other, since Ruby dispatches them differently. Stimulus
+controller/action methods extracted from JS already use this
+`<identifier>#<method>` shape (see [Stimulus](#stimulus)).
+
+`ida duplicates method` and `ida duplicates stimulus_controller` (MCP tool
+`ida_duplicates`, argument `kind`) list every qualified name shared by more
+than one declaration, in the same file or across different files (a
+reopened class, a monkey-patched module, or a second Stimulus controller
+file registering the same identifier). This is the concrete risk Ruby's own
+load semantics create: when the same method name is declared twice under
+the same owner, the last one loaded silently wins and the earlier
+definition is simply never called — Rails' autoloader normally prevents
+this for a single top-level class per file, but a reopened class/module, a
+monkey patch, or a `def` inside a `config/environments/*.rb`/
+`config/locales/*.rb` block can still collide.
+
+Because `config/environments/*.rb` and `config/locales/*.rb` are Rails'
+own per-environment/per-locale files — never loaded together, so a
+"duplicate" there changes nothing at runtime — every group is also
+marked `expected: true` when every one of its locations falls under those
+two directories, so real cross-class collisions stand out from routine,
+harmless overlap.
+
+Duplicate detection does not compare view templates: ERB partials have no
+stable owner boundary (no enclosing class) to scope a name to, and detecting
+near-identical *code*, as opposed to an identical declared name, would need
+a structural-similarity pass this tool does not attempt.
+
+## Environment variables
+
+`ENV["NAME"]`/`ENV['NAME']`/`ENV.fetch("NAME", ...)` reads become an
+`env_var_use` node wherever they appear — Ruby files, and YAML files (Rails
+renders `config/database.yml` and friends through ERB regardless of
+extension, so YAML is scanned too). A fully commented-out line (`#...` in
+Ruby/YAML, `<%#...%>` in ERB) is skipped; an inline trailing comment on an
+otherwise-live line is not specially handled, since a `#` can legitimately
+appear inside a quoted string.
+
+`ida env` (MCP tool `ida_env`) lists every variable name found, each with
+every file/line that reads it, tagged with a conventional category derived
+from its path: `database` for `config/database.yml`, `initializer` for
+`config/initializers/**`, `environment` for `config/environments/**`,
+`config` for anything else under `config/`, and `app` for everything else.
+A variable that is only ever *set*, or read through a settings-gem wrapper
+rather than `ENV` directly, will not appear.
+
 ## Document mentions
 
 Every document section's explicit code-symbol mentions (backtick-quoted spans

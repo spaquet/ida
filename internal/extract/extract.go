@@ -47,7 +47,42 @@ var (
 
 	classCallDirect = regexp.MustCompile(`\b((?:[A-Z][A-Za-z0-9_]*::)*[A-Z][A-Za-z0-9_]*)\.([a-z_][A-Za-z0-9_]*[!?]?)\b`)
 	classCallViaNew = regexp.MustCompile(`\b((?:[A-Z][A-Za-z0-9_]*::)*[A-Z][A-Za-z0-9_]*)\.new\b(?:\([^)]*\))?\s*\.\s*([a-z_][A-Za-z0-9_]*[!?]?)\b`)
+
+	envVarUse = regexp.MustCompile(`\bENV(?:\[\s*["']([A-Za-z_][A-Za-z0-9_]*)["']\s*\]|\.fetch\(\s*["']([A-Za-z_][A-Za-z0-9_]*)["'])`)
 )
+
+// envVarUses scans one line for ENV["NAME"]/ENV['NAME']/ENV.fetch("NAME", ...)
+// reads. Callers are responsible for not calling it on a fully commented-out
+// line; it does not itself try to strip trailing inline comments, since a
+// "#" can legitimately appear inside a quoted string.
+func envVarUses(path, text string, line int) []Node {
+	var nodes []Node
+	for _, m := range envVarUse.FindAllStringSubmatch(text, -1) {
+		name := m[1]
+		if name == "" {
+			name = m[2]
+		}
+		nodes = append(nodes, node(path, "env_var_use", name, name, line, line, "env-vars-v1"))
+	}
+	return nodes
+}
+
+// yamlFile scans a YAML file (config/database.yml and friends, which Rails
+// always renders through ERB regardless of extension) for ENV reads,
+// skipping full-line "#" comments.
+func yamlFile(path string, content []byte) []Node {
+	var nodes []Node
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for line := 1; scanner.Scan(); line++ {
+		text := scanner.Text()
+		if strings.HasPrefix(strings.TrimSpace(text), "#") {
+			continue
+		}
+		nodes = append(nodes, envVarUses(path, text, line)...)
+	}
+	return nodes
+}
 
 // methodCallUses scans one line of Ruby for `Receiver.method(...)` and
 // `Receiver.new(...).method(...)` calls on a constant-named receiver,
@@ -120,6 +155,9 @@ func File(path string, content []byte) []Node {
 	}
 	if ext == ".css" || ext == ".scss" {
 		nodes = append(nodes, css(path, content)...)
+	}
+	if ext == ".yml" || ext == ".yaml" {
+		nodes = append(nodes, yamlFile(path, content)...)
 	}
 	if isTemplatePath(path, ext) {
 		nodes = append(nodes, template(path, content)...)
@@ -341,6 +379,9 @@ func ruby(path string, content []byte) []Node {
 
 		nodes = append(nodes, renderUses(path, text, line, false)...)
 		nodes = append(nodes, methodCallUses(path, text, line)...)
+		if !strings.HasPrefix(trimmed, "#") {
+			nodes = append(nodes, envVarUses(path, text, line)...)
+		}
 
 		if trimmed == "end" {
 			if len(stack) > 0 && indent <= stack[len(stack)-1].indent {
@@ -357,16 +398,20 @@ func ruby(path string, content []byte) []Node {
 			}
 			continue
 		}
+		owner := classOwner(stack)
 		if match := rubyMethod.FindStringSubmatch(text); match != nil {
 			name := match[2]
-			qualified := name
+			suffix := name
 			if match[1] != "" {
-				qualified = "self." + name
+				suffix = "self." + name
+			}
+			qualified := suffix
+			if owner != "" {
+				qualified = owner + "#" + suffix
 			}
 			nodes = append(nodes, node(path, "method", name, qualified, line, line, "ruby-declarations-v1"))
 			continue
 		}
-		owner := classOwner(stack)
 		if owner == "" {
 			continue
 		}

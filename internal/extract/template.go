@@ -64,6 +64,9 @@ func template(path string, content []byte) []Node {
 			nodes = append(nodes, node(path, "react_mount", m[1], m[1], line, line, "react-mounts-v1"))
 		}
 		nodes = append(nodes, renderUses(path, text, line, true)...)
+		if !strings.HasPrefix(strings.TrimSpace(text), "<%#") {
+			nodes = append(nodes, envVarUses(path, text, line)...)
+		}
 		for _, m := range classAttr.FindAllStringSubmatch(text, -1) {
 			fields := strings.Fields(m[1])
 			if len(fields) == 0 {

@@ -12,7 +12,7 @@ func TestRubyDeclarations(t *testing.T) {
 	for _, node := range nodes {
 		got[node.QualifiedName] = true
 	}
-	for _, want := range []string{"Admin", "User", "active?"} {
+	for _, want := range []string{"Admin", "User", "User#active?"} {
 		if !got[want] {
 			t.Errorf("missing %q in %#v", want, nodes)
 		}
@@ -143,6 +143,44 @@ end
 	}
 	if len(calls) != 2 {
 		t.Fatalf("method_call_use = %#v; want exactly 2 (call, perform)", calls)
+	}
+}
+
+func TestEnvVarUsesRubyAndYAML(t *testing.T) {
+	rubyContent := []byte(`class Client
+  def initialize
+    @key = ENV["API_KEY"]
+    @secret = ENV.fetch("API_SECRET", nil)
+    # @old_key = ENV["UNUSED_KEY"]
+  end
+end
+`)
+	nodes := File("app/models/client.rb", rubyContent)
+	got := make(map[string]bool)
+	for _, n := range nodeByKind(nodes, "env_var_use") {
+		got[n.Name] = true
+	}
+	if !got["API_KEY"] || !got["API_SECRET"] {
+		t.Fatalf("env_var_use = %#v; want API_KEY and API_SECRET", got)
+	}
+	if got["UNUSED_KEY"] {
+		t.Fatalf("env_var_use should not extract from a commented-out line: %#v", got)
+	}
+
+	yamlContent := []byte(`production:
+  host: <%= ENV["DB_HOST"] %>
+  # password: <%= ENV["DB_PASSWORD"] %>
+`)
+	yamlNodes := File("config/database.yml", yamlContent)
+	ygot := make(map[string]bool)
+	for _, n := range nodeByKind(yamlNodes, "env_var_use") {
+		ygot[n.Name] = true
+	}
+	if !ygot["DB_HOST"] {
+		t.Fatalf("env_var_use = %#v; want DB_HOST", ygot)
+	}
+	if ygot["DB_PASSWORD"] {
+		t.Fatalf("env_var_use should not extract from a commented-out YAML line: %#v", ygot)
 	}
 }
 

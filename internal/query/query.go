@@ -354,6 +354,174 @@ ORDER BY f.path`, kind, edgeKind)
 	return results, rows.Err()
 }
 
+// DuplicateGroup is every declaration site sharing one qualified name, e.g.
+// the same method name declared twice under the same owning class/module
+// (Ruby's own rule is that the load-order-last definition silently wins,
+// which is exactly the risk this surfaces), or the same Stimulus controller
+// identifier registered by two different files (an outright conflict: only
+// one of them can ever be the controller Stimulus connects).
+type DuplicateGroup struct {
+	QualifiedName string               `json:"qualified_name"`
+	Locations     []store.SearchResult `json:"locations"`
+	Expected      bool                 `json:"expected"`
+}
+
+// duplicateKinds are the node kinds Duplicates supports: "method" (Ruby
+// class/module methods and Stimulus controller action/lifecycle methods,
+// both already qualified as "<owner>#<name>") and "stimulus_controller"
+// (qualified by its bare identifier). Duplicate detection intentionally
+// does not compare view templates (ERB has no stable owner boundary to
+// scope a name to) or attempt fuzzy code-similarity matching across
+// unrelated classes; it only flags an identical qualified name declared
+// more than once.
+var duplicateKinds = map[string]bool{
+	"method":              true,
+	"stimulus_controller": true,
+}
+
+// expectedDuplicatePrefixes are directories where Rails' own conventions
+// mean the same setting legitimately repeats across files that are never
+// loaded together (each config/environments/*.rb only loads for its own
+// RAILS_ENV; each config/locales/*.yml is a distinct locale) — real
+// duplicates elsewhere are reported the same way, just not flagged as
+// "expected".
+var expectedDuplicatePrefixes = []string{"config/environments/", "config/locales/"}
+
+// Duplicates reports every declaration of the given kind ("method" or
+// "stimulus_controller") whose qualified name is shared by more than one
+// declaration site.
+func Duplicates(db *store.DB, kind string) ([]DuplicateGroup, error) {
+	if !duplicateKinds[kind] {
+		return nil, fmt.Errorf("unsupported duplicates kind %q (want method or stimulus_controller)", kind)
+	}
+	where := "n.kind = ?"
+	args := []any{kind}
+	if kind == "method" {
+		where += " AND n.qualified_name LIKE '%#%' ESCAPE '\\'"
+	}
+	rows, err := db.Query(`
+SELECT n.id, n.kind, n.name, n.qualified_name, f.path, n.start_line, n.end_line,
+       f.content_hash, n.confidence, n.extractor
+FROM nodes n JOIN files f ON f.id = n.file_id
+WHERE `+where+`
+  AND n.qualified_name IN (
+    SELECT qualified_name FROM nodes WHERE kind = ? GROUP BY qualified_name HAVING COUNT(*) > 1
+  )
+ORDER BY n.qualified_name, f.path, n.start_line`, append(args, kind)...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var order []string
+	groups := make(map[string]*DuplicateGroup)
+	for rows.Next() {
+		var result store.SearchResult
+		if err := rows.Scan(&result.ID, &result.Kind, &result.Name, &result.QualifiedName, &result.Path,
+			&result.StartLine, &result.EndLine, &result.ContentHash, &result.Confidence, &result.Extractor); err != nil {
+			return nil, err
+		}
+		group, ok := groups[result.QualifiedName]
+		if !ok {
+			group = &DuplicateGroup{QualifiedName: result.QualifiedName, Expected: true}
+			groups[result.QualifiedName] = group
+			order = append(order, result.QualifiedName)
+		}
+		group.Locations = append(group.Locations, result)
+		if !hasExpectedPrefix(result.Path) {
+			group.Expected = false
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	results := make([]DuplicateGroup, 0, len(order))
+	for _, name := range order {
+		results = append(results, *groups[name])
+	}
+	return results, nil
+}
+
+func hasExpectedPrefix(path string) bool {
+	for _, prefix := range expectedDuplicatePrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// EnvVarUse is one ENV["NAME"]/ENV.fetch("NAME", ...) read site.
+type EnvVarUse struct {
+	Path     string `json:"path"`
+	Line     int    `json:"line"`
+	Category string `json:"category"`
+}
+
+// EnvVarGroup is every read site for one environment variable name,
+// organized by the conventional area of the app it was read from.
+type EnvVarGroup struct {
+	Name string      `json:"name"`
+	Uses []EnvVarUse `json:"uses"`
+}
+
+// EnvVars lists every ENV variable name Ida found being read, each with
+// every file/line it reads from, grouped by name and ordered alphabetically.
+// A variable only ever set (not read) in code, or read through a wrapper
+// like a settings gem, will not appear here.
+func EnvVars(db *store.DB) ([]EnvVarGroup, error) {
+	rows, err := db.Query(`
+SELECT n.name, f.path, n.start_line
+FROM nodes n JOIN files f ON f.id = n.file_id
+WHERE n.kind = 'env_var_use'
+ORDER BY n.name, f.path, n.start_line`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var order []string
+	groups := make(map[string]*EnvVarGroup)
+	for rows.Next() {
+		var name, path string
+		var line int
+		if err := rows.Scan(&name, &path, &line); err != nil {
+			return nil, err
+		}
+		group, ok := groups[name]
+		if !ok {
+			group = &EnvVarGroup{Name: name}
+			groups[name] = group
+			order = append(order, name)
+		}
+		group.Uses = append(group.Uses, EnvVarUse{Path: path, Line: line, Category: envVarCategory(path)})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	results := make([]EnvVarGroup, 0, len(order))
+	for _, name := range order {
+		results = append(results, *groups[name])
+	}
+	return results, nil
+}
+
+// envVarCategory buckets a read site by the conventional Rails area it
+// lives in, so `ida env` can group results by database/initializer/config
+// instead of just a flat file list.
+func envVarCategory(path string) string {
+	switch {
+	case path == "config/database.yml":
+		return "database"
+	case strings.HasPrefix(path, "config/initializers/"):
+		return "initializer"
+	case strings.HasPrefix(path, "config/environments/"):
+		return "environment"
+	case strings.HasPrefix(path, "config/"):
+		return "config"
+	default:
+		return "app"
+	}
+}
+
 func isTokenSeparator(r rune) bool {
 	isWordRune := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_!?=:#/", r)
 	return !isWordRune
