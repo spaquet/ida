@@ -45,6 +45,11 @@ client-specific, but clients using the common `mcpServers` shape can use:
 }
 ```
 
+Run `ida mcp config` from inside the project to print this snippet with the
+paths filled in, for Claude Code, Cursor, Codex, Pi, and OpenCode. Pass one or
+more agent names to print only those, e.g. `ida mcp config claude-code`. Ida
+only prints the snippet; it never edits agent configuration itself.
+
 The MCP process starts an in-process filesystem watcher. It debounces normal
 save bursts and periodically reconciles file metadata and hashes. It does not
 start a shared daemon.

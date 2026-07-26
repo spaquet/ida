@@ -73,3 +73,19 @@ func Run(root string) Report {
 	}
 	return report
 }
+
+// WithLSPIntegrations appends "lsp:<name>" for each available LSP server to
+// status.EnabledIntegrations, so callers presenting full status (`ida
+// status`, the `ida_status` MCP tool) can report every active integration.
+func WithLSPIntegrations(root string, status store.Status) store.Status {
+	servers, err := lsp.Detect(root)
+	if err != nil {
+		return status
+	}
+	for _, server := range servers {
+		if server.Status == "available" {
+			status.EnabledIntegrations = append(status.EnabledIntegrations, "lsp:"+server.Name)
+		}
+	}
+	return status
+}
