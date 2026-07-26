@@ -12,7 +12,7 @@ import (
 	"github.com/spaquet/ida/internal/watch"
 )
 
-func TestCreateModifyDelete(t *testing.T) {
+func TestCreateModifyRenameDelete(t *testing.T) {
 	root := t.TempDir()
 	write := func(path, content string) {
 		t.Helper()
@@ -49,7 +49,19 @@ func TestCreateModifyDelete(t *testing.T) {
 	assertNode(t, root, "Story", 1)
 	assertNode(t, root, "Article", 0)
 
-	if err := os.Remove(filepath.Join(root, filepath.FromSlash(path))); err != nil {
+	renamedPath := "app/models/story.rb"
+	if err := os.Rename(
+		filepath.Join(root, filepath.FromSlash(path)),
+		filepath.Join(root, filepath.FromSlash(renamedPath)),
+	); err != nil {
+		t.Fatal(err)
+	}
+	waitUpdate(t, updates)
+	assertNode(t, root, "Story", 1)
+	assertFile(t, root, path, false)
+	assertFile(t, root, renamedPath, true)
+
+	if err := os.Remove(filepath.Join(root, filepath.FromSlash(renamedPath))); err != nil {
 		t.Fatal(err)
 	}
 	waitUpdate(t, updates)
@@ -75,6 +87,22 @@ func waitUpdate(t *testing.T, updates <-chan watch.Update) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for watcher")
+	}
+}
+
+func assertFile(t *testing.T, root, path string, want bool) {
+	t.Helper()
+	db, err := store.OpenExisting(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var got int
+	if err := db.QueryRow("SELECT count(*) FROM files WHERE path = ?", path).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if (got > 0) != want {
+		t.Fatalf("file %q indexed = %v; want %v", path, got > 0, want)
 	}
 }
 

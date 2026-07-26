@@ -4,6 +4,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0]
+
+- `ida mcp config [agent...]` prints ready-to-use MCP configuration snippets
+  for Claude Code, Cursor, Codex, Pi, and OpenCode, with the resolved binary
+  and project paths filled in. Ida never edits agent configuration itself.
+- `ida status` / `status --json` and the `ida_status` MCP tool now report
+  `extractor_versions` (the distinct extractor tags present in the index) and
+  `enabled_integrations` (watcher, docs, and available LSP servers).
+- MCP tool calls other than `ida_status` now include a `freshness` note in
+  their response when the index is incomplete, the watcher is degraded, or
+  files are still pending re-extraction, so an agent knows a result may be
+  stale without a separate status call.
+- Filesystem rename handling (watcher debounce, atomic refresh, old-node
+  cleanup) now has direct test coverage alongside create/modify/delete.
+
+Filesystem watch/debounce/hash-scan, atomic per-file refresh, `ida watch`,
+`ida status`, and all seven MCP tools (including `ida_refresh`) were already
+in place from 0.1.0/0.2.0; this release closes the remaining "agent loop"
+gaps: installer snippets, fuller freshness reporting, and observability
+fields.
+
 ## [0.2.0]
 
 - Rails engine recognition: `lib/<name>/engine.rb` declaring a class under

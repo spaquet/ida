@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -22,7 +23,7 @@ import (
 )
 
 const (
-	version = "0.2.0"
+	version = "0.3.0"
 	help    = `Ida is a local-first knowledge graph for Rails applications.
 
 Usage:
@@ -46,6 +47,9 @@ Commands:
   impact <name-or-id>  Show likely change effects
   docs add <path|url>  Add an explicit documentation source
   mcp [path]           Serve MCP over stdio
+  mcp config [agent...]
+                       Print MCP configuration snippets for supported agents
+                       (claude-code, cursor, codex, pi, opencode)
 
 Options:
   --json              Print structured command output
@@ -159,6 +163,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
+		status = doctor.WithLSPIntegrations(root, status)
 		return printValue(status, jsonOutput)
 	case "doctor":
 		root, err := project.Discover(arg(args, 1, "."))
@@ -267,6 +272,21 @@ func run(args []string) error {
 		}
 		return printValue(result, jsonOutput)
 	case "mcp":
+		if len(args) >= 2 && args[1] == "config" {
+			root, err := filepath.Abs(".")
+			if err != nil {
+				return err
+			}
+			binary, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			configs, err := mcp.ConfigSnippets(binary, root, args[2:])
+			if err != nil {
+				return err
+			}
+			return printValue(configs, jsonOutput)
+		}
 		root, err := project.Discover(arg(args, 1, "."))
 		if err != nil {
 			return err
@@ -347,6 +367,12 @@ func printValue(v any, asJSON bool) error {
 		for _, path := range value.PendingFiles {
 			fmt.Printf("pending file: %s\n", path)
 		}
+		if len(value.ExtractorVersions) > 0 {
+			fmt.Printf("extractors: %s\n", strings.Join(value.ExtractorVersions, ", "))
+		}
+		if len(value.EnabledIntegrations) > 0 {
+			fmt.Printf("integrations: %s\n", strings.Join(value.EnabledIntegrations, ", "))
+		}
 	case doctor.Report:
 		for _, check := range value.Checks {
 			fmt.Printf("%s: %s (%s)\n", check.Name, check.Status, check.Detail)
@@ -390,6 +416,13 @@ func printValue(v any, asJSON bool) error {
 			if i < len(value.Edges) {
 				fmt.Printf("  --%s (%s)-->\n", value.Edges[i].Kind, value.Edges[i].Confidence)
 			}
+		}
+	case []mcp.AgentConfig:
+		for i, config := range value {
+			if i > 0 {
+				fmt.Println()
+			}
+			fmt.Printf("%s\n%s\n%s\n\n%s\n", config.Agent, config.Description, config.Path, config.Snippet)
 		}
 	case []query.Relationship:
 		for _, relationship := range value {

@@ -18,16 +18,18 @@ type DB struct {
 }
 
 type Status struct {
-	State        string   `json:"state"`
-	Generation   int64    `json:"generation"`
-	Files        int      `json:"files"`
-	Nodes        int      `json:"nodes"`
-	Edges        int      `json:"edges"`
-	IndexedAt    string   `json:"indexed_at"`
-	LastError    string   `json:"last_error,omitempty"`
-	WatcherState string   `json:"watcher_state"`
-	PendingFiles []string `json:"pending_files"`
-	WatcherError string   `json:"watcher_error,omitempty"`
+	State               string   `json:"state"`
+	Generation          int64    `json:"generation"`
+	Files               int      `json:"files"`
+	Nodes               int      `json:"nodes"`
+	Edges               int      `json:"edges"`
+	IndexedAt           string   `json:"indexed_at"`
+	LastError           string   `json:"last_error,omitempty"`
+	WatcherState        string   `json:"watcher_state"`
+	PendingFiles        []string `json:"pending_files"`
+	WatcherError        string   `json:"watcher_error,omitempty"`
+	ExtractorVersions   []string `json:"extractor_versions"`
+	EnabledIntegrations []string `json:"enabled_integrations"`
 }
 
 type SearchResult struct {
@@ -209,7 +211,48 @@ FROM projects WHERE id = 1`).Scan(
 	if err == nil {
 		err = json.Unmarshal([]byte(pending), &status.PendingFiles)
 	}
+	if err == nil {
+		status.ExtractorVersions, err = db.extractorVersions()
+	}
+	if err == nil {
+		status.EnabledIntegrations, err = db.baseIntegrations(status)
+	}
 	return status, err
+}
+
+func (db *DB) extractorVersions() ([]string, error) {
+	rows, err := db.Query("SELECT DISTINCT extractor FROM nodes ORDER BY extractor")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	versions := []string{}
+	for rows.Next() {
+		var extractor string
+		if err := rows.Scan(&extractor); err != nil {
+			return nil, err
+		}
+		versions = append(versions, extractor)
+	}
+	return versions, rows.Err()
+}
+
+// baseIntegrations reports integrations observable from the database alone
+// (watcher, docs). LSP integrations are appended by the caller, which has
+// the project root needed to detect them.
+func (db *DB) baseIntegrations(status Status) ([]string, error) {
+	integrations := []string{}
+	if status.WatcherState == "active" {
+		integrations = append(integrations, "watcher")
+	}
+	var documents int
+	if err := db.QueryRow("SELECT count(*) FROM documents").Scan(&documents); err != nil {
+		return nil, err
+	}
+	if documents > 0 {
+		integrations = append(integrations, "docs")
+	}
+	return integrations, nil
 }
 
 func (db *DB) MarkFailed(message string) {

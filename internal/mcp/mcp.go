@@ -9,6 +9,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/spaquet/ida/internal/doctor"
 	"github.com/spaquet/ida/internal/index"
 	"github.com/spaquet/ida/internal/query"
 	"github.com/spaquet/ida/internal/store"
@@ -105,7 +106,7 @@ func handle(root string, db *store.DB, request request) (any, *rpcError) {
 		return map[string]any{
 			"protocolVersion": "2025-06-18",
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": false}},
-			"serverInfo":      map[string]any{"name": "ida", "version": "0.1.0"},
+			"serverInfo":      map[string]any{"name": "ida", "version": "0.3.0"},
 		}, nil
 	case "ping":
 		return map[string]any{}, nil
@@ -126,6 +127,11 @@ func handle(root string, db *store.DB, request request) (any, *rpcError) {
 			return map[string]any{"content": []any{map[string]any{"type": "text", "text": err.Error()}}, "isError": true}, nil
 		}
 		structured := map[string]any{"result": value}
+		if call.Name != "ida_status" {
+			if freshness := freshnessWarning(db); freshness != "" {
+				structured["freshness"] = freshness
+			}
+		}
 		data, err := json.Marshal(structured)
 		if err != nil {
 			return nil, internal(err)
@@ -136,6 +142,30 @@ func handle(root string, db *store.DB, request request) (any, *rpcError) {
 		}, nil
 	default:
 		return nil, &rpcError{Code: -32601, Message: "method not found"}
+	}
+}
+
+// freshnessWarning reports when a result may not reflect the latest files on
+// disk: a degraded watcher, files still pending re-extraction, or a state
+// other than "complete". It returns "" when the index is current.
+func freshnessWarning(db *store.DB) string {
+	status, err := db.Status()
+	if err != nil {
+		return ""
+	}
+	switch {
+	case status.State != "complete":
+		return "index is " + status.State + "; results may be incomplete"
+	case status.WatcherState == "degraded":
+		detail := "watcher is degraded"
+		if status.WatcherError != "" {
+			detail += ": " + status.WatcherError
+		}
+		return detail
+	case len(status.PendingFiles) > 0:
+		return fmt.Sprintf("%d file(s) pending re-extraction; results may be stale", len(status.PendingFiles))
+	default:
+		return ""
 	}
 }
 
@@ -165,7 +195,11 @@ func callTool(root string, db *store.DB, name string, arguments json.RawMessage)
 		if err := decode(arguments, &struct{}{}); err != nil {
 			return nil, err
 		}
-		return db.Status()
+		status, err := db.Status()
+		if err != nil {
+			return nil, err
+		}
+		return doctor.WithLSPIntegrations(root, status), nil
 	case "ida_search":
 		var input struct {
 			Query string `json:"query"`
