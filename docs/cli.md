@@ -154,6 +154,18 @@ is ambiguous, use its stable node ID or qualified name.
 ida node "GET /articles"
 ```
 
+To find where a Stimulus controller is used, look up its identifier (e.g.
+`date-picker` for `controllers/date_picker_controller.js`): incoming
+`stimulus_controller` edges are the templates with a matching
+`data-controller` attribute (see [relationships.md](relationships.md#stimulus)).
+
+```sh
+ida node date-picker
+```
+
+`ida search <identifier>` also works and returns both the controller
+definition and any use sites in one pass.
+
 ### `ida path <from> <to>`
 
 Find a directed relationship path up to four edges long.
