@@ -10,6 +10,10 @@
 *.out
 vendor/
 
+# IDA binary
+ida
+ida.exe
+
 # Go workspace/build cache
 go.work
 go.work.sum
